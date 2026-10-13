@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Impasto</title>
+  <link rel="stylesheet" href="css/painter.css">
+  <!-- type="module" lets main.js use import/export to load the other files. -->
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <!--
+    Layout: the painting hangs on a "wall" on the left; the control panel
+    sits on the right (or below it on narrow screens).
+  -->
+  <main class="studio">
+    <div class="wall">
+      <figure class="frame">
+        <!-- The WebGL canvas. Its pixel size is set in main.js; CSS scales it to fit. -->
+        <canvas id="painting" aria-label="Painting canvas. Drag to paint."></canvas>
+        <p id="status" class="status">Mixing paint…</p>
+      </figure>
+    </div>
+
+    <aside class="panel" aria-label="Controls">
+      <header class="panel__header">
+        <h1 class="panel__title">Impasto</h1>
+        <p class="panel__intro">Drag on the painting to lay down paint. Move the lamp to see the relief.</p>
+      </header>
+
+      <section class="group">
+        <h2 class="group__title">Light</h2>
+        <div id="light-pad" class="light-pad"></div>
+        <label class="toggle">
+          <input type="checkbox" id="orbit"> Orbit the light
+        </label>
+        <div id="light-controls"></div>
+      </section>
+
+      <section class="group">
+        <h2 class="group__title">Canvas</h2>
+        <div id="canvas-controls"></div>
+      </section>
+
+      <section class="group">
+        <h2 class="group__title">Test brush</h2>
+        <label class="control control--color">
+          <span class="control__label">Colour</span>
+          <input type="color" id="brush-color" value="#1f3a68">
+        </label>
+        <div id="brush-controls"></div>
+      </section>
+
+      <section class="group">
+        <h2 class="group__title">View</h2>
+        <label class="control control--select">
+          <span class="control__label">Show</span>
+          <select id="view-mode">
+            <option value="0">Lit painting</option>
+            <option value="1">Colour only</option>
+            <option value="2">Height map</option>
+            <option value="3">Surface normals</option>
+          </select>
+        </label>
+        <div class="actions">
+          <button id="test-paint" class="button button--primary">New test painting</button>
+          <button id="clear" class="button">Clear canvas</button>
+          <button id="save" class="button">Save PNG</button>
+        </div>
+      </section>
+    </aside>
+  </main>
+</body>
+</html>
