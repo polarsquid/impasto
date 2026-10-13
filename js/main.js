@@ -1,79 +1,90 @@
 // =============================================================================
 // main.js
 // -----------------------------------------------------------------------------
-// The entry point. Loaded by index.html as an ES module. It:
-//   1. loads the shaders and sets up WebGL,
-//   2. creates the paint surface and the lighting pass,
-//   3. builds the control panel,
-//   4. paints a test composition,
-//   5. redraws the screen whenever something changes.
+// The entry point, loaded by index.html as an ES module. It's the "shell"
+// that every build phase runs inside:
 //
-// PHASE 1 SCOPE: the lit height field + a test brush. The real procedural
-// background generator (phase 2), palette-knife text (phase 3) and presets
-// (phase 4) plug into this same structure later.
+//   1. loads the shaders and sets up WebGL,
+//   2. creates the shared pieces: lighting pass, settings, panel sections,
+//      hand brush,
+//   3. builds the tab bar, one tab per phase,
+//   4. runs the render loop, which draws whichever tab is showing.
+//
+// The phases themselves live in js/phases/. Each tab is CUMULATIVE: a later
+// phase shows everything the earlier ones did, plus its own new features,
+// all on the same shared engine. Adding phase 3 later means writing
+// js/phases/phase3-....js and adding it to the PHASES list below.
 // =============================================================================
 
 import { createContext, loadShaderSources } from './renderer/gl-utils.js';
 import { PaintSurface } from './renderer/surface.js';
 import { LightingPass } from './renderer/lighting.js';
 import { attachPointerBrush } from './strokes/pointer-brush.js';
-import { paintTestComposition, hexToRgb } from './strokes/test-strokes.js';
-import { createLightPad } from './ui/light-pad.js';
-import { buildSliders, initTooltips } from './ui/controls.js';
+import { hexToRgb } from './color/pigment.js';
+import { buildSharedSections } from './ui/shared-sections.js';
+import { createTabs } from './ui/tabs.js';
+import { initTooltips } from './ui/controls.js';
+import { brushPhase } from './phases/phase1-brush.js';
+import { generatorPhase } from './phases/phase2-generator.js';
 
-// --- Settings ----------------------------------------------------------------
+// Every phase, in order. The tab bar is built from this list.
+const PHASES = [brushPhase, generatorPhase];
 
 // Surface resolution in pixels. 4:5 portrait. The canvas is displayed scaled
 // to fit the window, but everything is painted at this size.
 const SURFACE_WIDTH = 1080;
 const SURFACE_HEIGHT = 1350;
 
-// Canvas colours to pick from: traditional grounds painters prime with.
-// A dark or coloured ground changes the mood of everything painted over it,
-// because it peeks through wherever the paint is thin.
-const GROUND_SWATCHES = [
-  { name: 'White gesso',   hex: '#ebe6da' },
-  { name: 'Primed linen',  hex: '#d8cfbd' },
-  { name: 'Raw linen',     hex: '#b9a582' },
-  { name: 'Warm grey',     hex: '#8b847a' },
-  { name: 'Red ochre',     hex: '#8a4a33' },
-  { name: 'Black gesso',   hex: '#232120' },
+// Every shader file the app uses (files they #include are found automatically).
+const SHADER_FILES = [
+  'fullscreen.vert', 'dab.vert', 'dab.frag', 'composite.frag', 'copy.frag', 'lighting.frag',
 ];
+
+// --- Shared settings ------------------------------------------------------------
+// One set for the whole app: the light, canvas and brush are the same in
+// every tab. These objects are edited directly by the sliders.
+
 const DEFAULT_GROUND = '#d8cfbd';
+const DEFAULT_BRUSH_COLOR = '#1f3a68';
 
-// Everything the lighting pass needs: the light itself plus the canvas.
-// These objects are edited directly by the sliders.
-const light = {
-  ground: hexToRgb(DEFAULT_GROUND),  // canvas colour (sRGB 0..1)
-  azimuth: 315,     // light from the top left (degrees, 0 = top)
-  elevation: 32,    // fairly low, raking light shows off the relief
-  ambient: 0.32,
-  depth: 7,         // pixels of height per unit of paint
-  specular: 0.35,
-  shininess: 40,
-  shadow: 0.85,
-  occlusion: 0.6,
-  weave: 0.15,
-  weaveScale: 5,
-  viewMode: 0,
+const settings = {
+  defaultGround: DEFAULT_GROUND,
+  defaultBrushColor: DEFAULT_BRUSH_COLOR,
+
+  // Everything the lighting pass needs: the light itself plus the canvas.
+  light: {
+    ground: hexToRgb(DEFAULT_GROUND),  // canvas colour (sRGB 0..1)
+    azimuth: 315,     // light from the top left (degrees, 0 = top)
+    elevation: 32,    // fairly low, raking light shows off the relief
+    ambient: 0.32,
+    depth: 7,         // pixels of height per unit of paint
+    specular: 0.35,
+    shininess: 40,
+    shadow: 0.85,
+    occlusion: 0.6,
+    weave: 0.15,
+    weaveScale: 5,
+    viewMode: 0,
+  },
+
+  // The brush. The "character" settings (tip to pickup) are shared with the
+  // generator; size, thickness, load and colour are for the hand brush only.
+  brush: {
+    radius: 30,        // px
+    thickness: 1.0,    // paint units
+    loadLength: 500,   // px of travel before the paint is mostly used up
+    color: hexToRgb(DEFAULT_BRUSH_COLOR),
+    tipShape: 2.2,     // 1 = round tip, higher = flatter brush with squarer ends
+    edgeWobble: 0.5,   // how ragged the stroke edges are
+    bristles: 14,      // grooves across the brush
+    groove: 0.45,      // groove depth 0..1
+    ridge: 0.35,       // edge ridge height
+    flatten: 0.55,     // how much the brush squashes paint under it
+    pickup: 0.35,      // how much wet paint underneath mixes into the brush
+  },
 };
 
-// The test brush you paint with by hand.
-const brush = {
-  radius: 30,        // px
-  thickness: 1.0,    // paint units
-  bristles: 14,      // grooves across the brush
-  tipShape: 2.2,     // 1 = round tip, higher = flatter brush with squarer ends
-  edgeWobble: 0.5,   // how ragged the stroke edges are
-  groove: 0.45,      // groove depth 0..1
-  ridge: 0.35,       // edge ridge height
-  loadLength: 500,   // px of travel before the paint is mostly used up
-  flatten: 0.55,     // how much the brush squashes paint under it
-  pickup: 0.35,      // how much wet paint underneath tints the brush
-  color: hexToRgb('#1f3a68'),
-};
-
-// --- Start up ----------------------------------------------------------------
+// --- Start up ----------------------------------------------------------------------
 
 const canvas = document.getElementById('painting');
 const statusEl = document.getElementById('status');
@@ -82,163 +93,111 @@ async function start() {
   canvas.width = SURFACE_WIDTH;
   canvas.height = SURFACE_HEIGHT;
   const gl = createContext(canvas);
-
-  const shaders = await loadShaderSources([
-    'fullscreen.vert', 'dab.vert', 'dab.frag', 'composite.frag', 'lighting.frag',
-  ]);
-
-  const surface = new PaintSurface(gl, shaders, SURFACE_WIDTH, SURFACE_HEIGHT);
+  const shaders = await loadShaderSources(SHADER_FILES);
   const lighting = new LightingPass(gl, shaders);
 
-  // --- Rendering on demand -----------------------------------------------------
-  // Rather than redrawing 60 times a second forever, we only redraw when
-  // something changed (requestRender sets a flag). The one exception is the
-  // "orbit light" animation, which changes every frame while it's on.
+  // --- The app context ------------------------------------------------------------
+  // One object handed to every phase and shared section, so they can reach
+  // the engine without importing main.js (which would be a circular import).
+  let activePhase = null;
   let needsRender = true;
-  let orbiting = false;
-  let lastTime = performance.now();
-  const requestRender = () => { needsRender = true; };
 
+  const app = {
+    settings,
+    width: SURFACE_WIDTH,
+    height: SURFACE_HEIGHT,
+    orbiting: false,     // set by the "Orbit the light" checkbox
+    lightPad: null,      // set when the light section is built
+
+    /** A new, blank painting surface (each tab makes its own). */
+    createSurface: () => new PaintSurface(gl, shaders, SURFACE_WIDTH, SURFACE_HEIGHT),
+
+    /** Ask for the screen to be redrawn on the next frame. */
+    requestRender: () => { needsRender = true; },
+
+    /** A shared setting changed: redraw, and tell the active phase. */
+    notify(kind) {
+      needsRender = true;
+      activePhase?.notify?.(kind);
+    },
+
+    clearPainting() {
+      activePhase?.surface.clear();
+      needsRender = true;
+    },
+
+    savePng() {
+      // Draw a fresh frame first. The canvas keeps its image afterwards
+      // (preserveDrawingBuffer), so we can turn it straight into a file.
+      lighting.render(activePhase.surface.display, SURFACE_WIDTH, SURFACE_HEIGHT, settings.light);
+      canvas.toBlob((blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `impasto-${activePhase.id}-${Date.now()}.png`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }, 'image/png');
+    },
+  };
+
+  // --- Panel ---------------------------------------------------------------------------
+  const { sections: shared } = buildSharedSections(app);
+  const panelBody = document.getElementById('phase-panel');
+  const introEl = document.getElementById('phase-intro');
+
+  /** Show a phase: build it if it's new, then swap its sections in. */
+  function activate(phase) {
+    if (!phase.initialized) {
+      phase.init(app);
+      phase.initialized = true;
+    }
+    activePhase?.leave?.(app);
+    activePhase = phase;
+
+    // Look up each name in the layout: the phase's own section first,
+    // otherwise a shared one. replaceChildren MOVES the shared sections
+    // here from the previous tab's panel.
+    panelBody.replaceChildren(...phase.layout.map((name) => phase.sections?.[name] ?? shared[name]));
+    initTooltips(panelBody);
+    introEl.textContent = phase.intro;
+    document.title = `Impasto: ${phase.title}`;
+
+    phase.enter?.(app);
+    needsRender = true;
+  }
+
+  createTabs(document.getElementById('phase-tabs'), PHASES, 'phase-panel', activate)
+    .select(location.hash.slice(1));
+
+  // --- Painting by hand --------------------------------------------------------------
+  // A phase can refuse hand painting for a moment (the generator does while
+  // it's still painting) by returning null from handPaintSurface().
+  attachPointerBrush(canvas, {
+    getSurface: () => (activePhase.handPaintSurface ? activePhase.handPaintSurface() : activePhase.surface),
+    getBrush: () => settings.brush,
+    onChange: app.requestRender,
+  });
+
+  // --- Render loop -----------------------------------------------------------------------
+  // Rather than redrawing 60 times a second forever, we only redraw when
+  // something changed (needsRender). The exception is "orbit the light",
+  // which changes every frame while it's on.
+  let lastTime = performance.now();
   function frame(now) {
     const dt = (now - lastTime) / 1000;
     lastTime = now;
-    if (orbiting) {
-      light.azimuth = (light.azimuth + dt * 30) % 360;  // 30 degrees per second
-      lightPad.refresh();
+    if (app.orbiting) {
+      settings.light.azimuth = (settings.light.azimuth + dt * 30) % 360;  // 30 degrees a second
+      app.lightPad.refresh();
       needsRender = true;
     }
-    if (needsRender) {
-      lighting.render(surface.display, SURFACE_WIDTH, SURFACE_HEIGHT, light);
+    if (needsRender && activePhase) {
+      lighting.render(activePhase.surface.display, SURFACE_WIDTH, SURFACE_HEIGHT, settings.light);
       needsRender = false;
     }
     requestAnimationFrame(frame);
   }
 
-  // --- Panel ---------------------------------------------------------------------
-  const lightPad = createLightPad(document.getElementById('light-pad'), light, requestRender);
-
-  // Each "tip" becomes the hover tooltip for that slider.
-  buildSliders(document.getElementById('light-controls'), light, [
-    { key: 'depth', label: 'Paint depth', min: 0, max: 15, step: 0.1, digits: 1,
-      tip: 'How tall the paint stands. Higher makes ridges and grooves deeper and shadows longer. 0 makes the paint look flat.' },
-    { key: 'shadow', label: 'Shadows', min: 0, max: 1, step: 0.01,
-      tip: 'How dark the shadows are that ridges cast onto the paint beside them.' },
-    { key: 'specular', label: 'Sheen', min: 0, max: 1.5, step: 0.01,
-      tip: 'Brightness of the glossy highlights where light glints off wet oil paint. Bare canvas stays matte.' },
-    { key: 'shininess', label: 'Sheen sharpness', min: 4, max: 200, step: 1, digits: 0,
-      tip: 'Low gives broad, soft highlights like satin. High gives small, sharp glints like fresh glossy paint.' },
-    { key: 'ambient', label: 'Ambient light', min: 0, max: 1, step: 0.01,
-      tip: 'Light that comes from everywhere at once. Lower makes shadows and dark colours deeper; higher flattens everything.' },
-    { key: 'occlusion', label: 'Crevice darkening', min: 0, max: 2, step: 0.01,
-      tip: 'Darkens the deep gaps between ridges of paint, where surrounding light struggles to reach.' },
-  ], requestRender);
-
-  buildSliders(document.getElementById('canvas-controls'), light, [
-    { key: 'weave', label: 'Weave depth', min: 0, max: 0.6, step: 0.01,
-      tip: "How strongly the canvas's woven texture shows. It only shows through thin paint; thick paint buries it." },
-    { key: 'weaveScale', label: 'Thread size', min: 2, max: 12, step: 0.5, digits: 1,
-      tip: 'Spacing of the canvas threads, in pixels. Small is fine linen; large is coarse burlap.' },
-  ], requestRender);
-
-  buildSliders(document.getElementById('brush-controls'), brush, [
-    { key: 'radius', label: 'Size', min: 4, max: 90, step: 1, digits: 0,
-      tip: 'Half the width of the brush, in pixels.' },
-    { key: 'thickness', label: 'Paint thickness', min: 0.1, max: 3, step: 0.05,
-      tip: 'How much paint the brush lays down, and so how high each stroke stands above the canvas.' },
-    { key: 'loadLength', label: 'Paint load', min: 60, max: 2000, step: 10, digits: 0,
-      tip: 'How far the brush travels (in pixels) before running dry. A small load breaks into scratchy bristle marks quickly.' },
-    { key: 'tipShape', label: 'Tip flatness', min: 1, max: 4, step: 0.1, digits: 1,
-      tip: '1 is a round brush with rounded stroke ends. Higher is a flat brush with squarer ends.' },
-    { key: 'edgeWobble', label: 'Ragged edges', min: 0, max: 1, step: 0.01,
-      tip: 'How uneven the edges of a stroke are. 0 gives clean, straight edges.' },
-    { key: 'bristles', label: 'Bristles', min: 2, max: 40, step: 1, digits: 0,
-      tip: 'How many bristle grooves run along each stroke. Few gives coarse hog-hair streaks; many gives fine, soft-hair texture.' },
-    { key: 'groove', label: 'Groove depth', min: 0, max: 1, step: 0.01,
-      tip: 'How deeply the bristle grooves cut into the paint.' },
-    { key: 'ridge', label: 'Edge ridges', min: 0, max: 1.5, step: 0.01,
-      tip: 'Height of the little walls of paint the brush pushes up along both edges of a stroke.' },
-    { key: 'flatten', label: 'Pressure on paint below', min: 0, max: 1, step: 0.01,
-      tip: 'How much the brush squashes the paint already on the canvas as it passes over it.' },
-    { key: 'pickup', label: 'Wet pickup', min: 0, max: 1, step: 0.01,
-      tip: 'How much wet paint already on the canvas gets dragged into a new stroke, showing as streaks of the old colour.' },
-  ], () => {});
-
-  // --- Canvas colour ------------------------------------------------------------
-  // A row of swatch buttons plus a custom colour picker. aria-pressed marks
-  // the chosen swatch, for both the styling and screen readers.
-  const swatchRow = document.getElementById('ground-swatches');
-  const groundPicker = document.getElementById('ground-color');
-  groundPicker.value = DEFAULT_GROUND;
-
-  function setGround(hex) {
-    light.ground = hexToRgb(hex);
-    groundPicker.value = hex;
-    for (const b of swatchRow.querySelectorAll('.swatch')) {
-      b.setAttribute('aria-pressed', String(b.dataset.hex === hex));
-    }
-    requestRender();  // no repainting needed: the lighting pass mixes it in
-  }
-
-  for (const { name, hex } of GROUND_SWATCHES) {
-    const button = document.createElement('button');
-    button.className = 'swatch';
-    button.type = 'button';
-    button.dataset.hex = hex;
-    button.style.setProperty('--swatch', hex);
-    button.setAttribute('aria-label', name);
-    button.addEventListener('click', () => setGround(hex));
-    swatchRow.insertBefore(button, groundPicker);  // swatches first, picker last
-  }
-  groundPicker.addEventListener('input', () => setGround(groundPicker.value));
-  setGround(DEFAULT_GROUND);
-
-  const colorInput = document.getElementById('brush-color');
-  colorInput.addEventListener('input', () => { brush.color = hexToRgb(colorInput.value); });
-
-  document.getElementById('view-mode').addEventListener('change', (e) => {
-    light.viewMode = parseInt(e.target.value, 10);
-    requestRender();
-  });
-
-  document.getElementById('orbit').addEventListener('change', (e) => {
-    orbiting = e.target.checked;
-  });
-
-  // "Clear canvas" back to bare primed canvas.
-  document.getElementById('clear').addEventListener('click', () => {
-    surface.clear();
-    requestRender();
-  });
-
-  // "New test painting": a different random seed each time.
-  document.getElementById('test-paint').addEventListener('click', () => {
-    surface.clear();
-    paintTestComposition(surface, brush, Math.floor(Math.random() * 1e6));
-    requestRender();
-  });
-
-  // "Save PNG": the canvas keeps its image (preserveDrawingBuffer), so we can
-  // turn it straight into a file.
-  document.getElementById('save').addEventListener('click', () => {
-    lighting.render(surface.display, SURFACE_WIDTH, SURFACE_HEIGHT, light);
-    canvas.toBlob((blob) => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `impasto-${Date.now()}.png`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }, 'image/png');
-  });
-
-  // All controls exist now, so give everything with data-tip its tooltip.
-  initTooltips();
-
-  // --- Painting by hand --------------------------------------------------------
-  attachPointerBrush(canvas, surface, { getBrush: () => brush, onChange: requestRender });
-
-  // --- First painting ----------------------------------------------------------
-  surface.clear();
-  paintTestComposition(surface, brush, 7);
   statusEl.hidden = true;
   requestAnimationFrame(frame);
 }

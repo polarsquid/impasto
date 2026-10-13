@@ -16,28 +16,8 @@
 // =============================================================================
 
 import { StrokePath } from './stroke-path.js';
-
-/**
- * A tiny seeded random number generator ("mulberry32"). Math.random() can't
- * be seeded, but we want the same seed to give the same painting every time.
- * Returns a function that produces numbers in 0..1.
- */
-export function seededRandom(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a = (a + 0x6D2B79F5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** '#3a5f8f' -> [0.23, 0.37, 0.56] */
-export function hexToRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
-}
+import { hexToRgb } from '../color/pigment.js';
+import { seededRandom } from '../generator/random.js';
 
 // A deliberately small palette, as a painter would mix from.
 const PALETTE = ['#1f3a68', '#2e6f73', '#c9a227', '#e8dcc0', '#9c2f2a', '#3b2f4a'];

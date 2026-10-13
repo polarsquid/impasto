@@ -35,14 +35,42 @@ export function createContext(canvas) {
  * Note: fetch() only works when the page is served over http(s), which is why
  * the README says to run a local server instead of double-clicking the file.
  *
+ * Also adds the one feature GLSL lacks: #include. A line like
+ *     #include "lib/spectral.glsl"
+ * is replaced by the contents of shaders/lib/spectral.glsl before the
+ * shader is compiled, so shared shader code lives in one file.
+ *
  * @param {string[]} names  e.g. ['dab.vert', 'dab.frag']
  * @returns {Promise<Object>} { 'dab.vert': '...source...', ... }
  */
 export async function loadShaderSources(names) {
+  const cache = new Map();  // so a file included twice is only fetched once
+
+  async function fetchText(path) {
+    if (!cache.has(path)) {
+      cache.set(path, fetch(`shaders/${path}`).then((response) => {
+        if (!response.ok) throw new Error(`Could not load shaders/${path} (${response.status})`);
+        return response.text();
+      }));
+    }
+    return cache.get(path);
+  }
+
+  // Find every line that looks like:  #include "some/file.glsl"
+  const INCLUDE = /^[ \t]*#include[ \t]+"([^"]+)"[ \t]*$/gm;
+
+  async function resolveIncludes(source) {
+    // 1. Fetch (and recursively resolve) every included file first...
+    const files = new Map();
+    for (const [, path] of source.matchAll(INCLUDE)) {
+      if (!files.has(path)) files.set(path, await resolveIncludes(await fetchText(path)));
+    }
+    // 2. ...then swap each #include line for its file's contents.
+    return source.replace(INCLUDE, (line, path) => files.get(path));
+  }
+
   const entries = await Promise.all(names.map(async (name) => {
-    const response = await fetch(`shaders/${name}`);
-    if (!response.ok) throw new Error(`Could not load shaders/${name} (${response.status})`);
-    return [name, await response.text()];
+    return [name, await resolveIncludes(await fetchText(name))];
   }));
   return Object.fromEntries(entries);
 }
@@ -210,6 +238,27 @@ export function bindTarget(gl, target) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
   }
+}
+
+/**
+ * Limit drawing to a rectangle (the "scissor test"). Pixels outside it are
+ * left completely untouched, so the GPU skips them. We use this so each
+ * stroke only re-processes the patch of canvas it actually covers, instead of
+ * all 1.4 million pixels.
+ *
+ * @param {Object|null} box  { x0, y0, x1, y1 } in surface pixels, with y
+ *   pointing DOWN like the mouse. Pass null to switch the scissor off.
+ * @param {number} surfaceHeight  needed to flip y: WebGL's y points UP.
+ */
+export function setScissor(gl, box, surfaceHeight) {
+  if (!box) {
+    gl.disable(gl.SCISSOR_TEST);
+    return;
+  }
+  gl.enable(gl.SCISSOR_TEST);
+  const x = Math.floor(box.x0);
+  const y = Math.floor(surfaceHeight - box.y1);   // bottom edge, measured from the bottom
+  gl.scissor(x, y, Math.ceil(box.x1) - x, Math.ceil(surfaceHeight - box.y0) - y);
 }
 
 /**

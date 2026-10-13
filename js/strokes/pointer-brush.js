@@ -21,13 +21,16 @@ import { StrokePath } from './stroke-path.js';
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {PaintSurface} surface
  * @param {Object} hooks
- *   getBrush()  returns the current brush settings
- *   onChange()  called whenever the painting changed (to redraw)
+ *   getSurface()  returns the PaintSurface to paint on. A function rather
+ *                 than a fixed surface, because each tab has its own painting
+ *                 and the brush should paint on whichever one is showing.
+ *   getBrush()    returns the current brush settings
+ *   onChange()    called whenever the painting changed (to redraw)
  */
-export function attachPointerBrush(canvas, surface, { getBrush, onChange }) {
+export function attachPointerBrush(canvas, { getSurface, getBrush, onChange }) {
   let path = null;
+  let surface = null;   // the surface the current stroke is being painted on
 
   // The canvas is drawn at its surface resolution (e.g. 1080 x 1350) but
   // shown scaled by CSS to fit the window. Convert the pointer's on-screen
@@ -42,6 +45,8 @@ export function attachPointerBrush(canvas, surface, { getBrush, onChange }) {
 
   canvas.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;          // left button / touch / pen tip only
+    surface = getSurface();
+    if (!surface) return;
     canvas.setPointerCapture(event.pointerId);
 
     // Copy the brush settings and give this stroke its own random seed, so

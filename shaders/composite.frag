@@ -23,6 +23,10 @@ precision highp float;
 // without repainting.
 // =============================================================================
 
+// Pigment mixing (a GLSL port of Spectral.js). Our shader loader pastes the
+// file's contents in place of this line; see loadShaderSources() in gl-utils.js.
+#include "lib/spectral.glsl"
+
 in vec2 vUv;
 
 uniform sampler2D uPaint;    // surface so far: colour + coverage
@@ -54,15 +58,20 @@ void main() {
   // pure. "fullness" is how thick the paint is here compared with the body
   // of a fully loaded stroke (the body sits at ~75% of uThickness, see
   // dab.frag), 0..1. Pickup only kicks in once fullness drops below 75%.
-  // NOTE: this is a plain RGB blend for now. Phase 2 swaps in Spectral.js
-  // (Kubelka-Munk) mixing, so blue + yellow makes green like real paint.
+  //
+  // The picked-up paint is mixed like real pigment (spectralMix), so blue
+  // dragged through wet yellow turns green rather than a dull grey. Pigment
+  // mixing is expensive (38 wavelengths), so it only runs where some pickup
+  // actually happens.
   float wetUnder = smoothstep(0.0, 0.2, oldHeight);
   float fullness = clamp(thickness / max(uThickness * 0.75, 0.001), 0.0, 1.0);
   float pickup   = uPickup * wetUnder * smoothstep(0.75, 0.1, fullness);
-  vec3 brushColor = mix(uColor, old.rgb, pickup);
+  vec3 brushColor = pickup > 0.002 ? spectralMix(uColor, old.rgb, pickup) : uColor;
 
   // "Over" compositing: the new paint covers `coverage` of the pixel, and the
-  // old paint shows through in what's left. Total coverage only ever grows:
+  // old paint shows through in what's left. (This is a plain average, not
+  // pigment mixing: partial coverage means separate specks of paint side by
+  // side, which the eye blends like light, not like mixed pigment.) Total coverage only ever grows:
   //   newCoverage = new + old * (1 - new)
   // The colour is the coverage-weighted average of new and old paint.
   float newCoverage = coverage + old.a * (1.0 - coverage);

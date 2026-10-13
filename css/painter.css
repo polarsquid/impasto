@@ -28,6 +28,10 @@
 
 * { box-sizing: border-box; }
 
+/* Our own display rules (e.g. .control { display: grid }) would otherwise
+   beat the browser's built-in "hidden means display: none". */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -101,8 +105,41 @@ html, body {
   letter-spacing: -0.01em;
 }
 
+/* --- Tabs: one per build phase --------------------------------------------------
+   Quiet text tabs with an underline on the active one. The number is a
+   real sequence (build order), so it earns its place. */
+.tabs {
+  display: flex;
+  gap: 1.25rem;
+  margin-top: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: -1px;          /* sit the underline on the row's border */
+  padding: 0.4rem 0 0.55rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--step-0);
+  cursor: pointer;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.tab__number {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
 .panel__intro {
-  margin: 0.5rem 0 0;
+  margin: 0.75rem 0 0;
   font-size: var(--step-1);
   line-height: 1.5;
   color: var(--muted);
@@ -112,6 +149,29 @@ html, body {
   margin-top: 1.75rem;
   padding-top: 1.25rem;
   border-top: 1px solid var(--line);
+}
+
+.group__note {
+  margin: -0.4rem 0 0.9rem;
+  font-size: var(--step-0);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.group__subtitle {
+  margin: 1.1rem 0 0.6rem;
+  font-size: var(--step-0);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Generator progress, e.g. "412 strokes, painted in 0.6s". */
+.group__status {
+  min-height: 1.2em;     /* reserve the line so the panel doesn't jump */
+  margin: 0.75rem 0 0;
+  font-size: var(--step-0);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .group__title {
@@ -231,6 +291,43 @@ select {
   height: 1.75rem;
   margin-left: auto;   /* custom picker sits apart, at the end of the row */
 }
+
+/* --- Generator: seed field ---------------------------------------------------------- */
+.control--seed { align-items: center; }
+input[type="number"] {
+  width: 7.5rem;
+  font: inherit;
+  font-size: var(--step-0);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--wall);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.3rem 0.5rem;
+}
+
+/* --- Generator: palette slots --------------------------------------------------------
+   One row per colour: picker, amount slider, value. A colour with zero
+   weight is dimmed, since it won't be used. */
+.palette {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.25rem 0 1rem;
+}
+.palette__slot {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr 2.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: var(--step-0);
+}
+.palette__slot input[type="color"] { width: 2.25rem; height: 1.5rem; }
+.palette__slot output {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.palette__slot--off input[type="color"] { opacity: 0.35; }
 
 /* --- Light pad ------------------------------------------------------------------
    The circle you drag the lamp around. Centre = overhead, rim = raking light. */

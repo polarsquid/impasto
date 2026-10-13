@@ -1,9 +1,10 @@
 // =============================================================================
 // controls.js
 // -----------------------------------------------------------------------------
-// Builds the sliders in the side panel from simple descriptions, so adding a
-// new setting is one entry in main.js rather than a chunk of HTML. Also turns
-// any element with a data-tip="..." attribute into a hover tooltip.
+// Small builders for the side panel, so adding a setting is one entry in a
+// list rather than a chunk of HTML: sections, sliders, dropdowns, checkboxes
+// and buttons. Also turns any element with a data-tip="..." attribute into a
+// hover tooltip.
 //
 // Each slider is "bound" to a key on a settings object: moving the slider
 // writes straight into that object, then calls onChange so the app redraws.
@@ -13,12 +14,49 @@ let idCounter = 0;
 const nextId = (prefix) => `${prefix}-${++idCounter}`;
 
 /**
+ * A titled panel section.
+ * @param {string} title
+ * @param {Object} [options]  { note: a short line of help text under the title }
+ * @returns {HTMLElement} the <section>; add controls to it with appendChild
+ */
+export function createSection(title, { note } = {}) {
+  const section = document.createElement('section');
+  section.className = 'group';
+  const heading = document.createElement('h2');
+  heading.className = 'group__title';
+  heading.textContent = title;
+  section.appendChild(heading);
+  if (note) {
+    const p = document.createElement('p');
+    p.className = 'group__note';
+    p.textContent = note;
+    section.appendChild(p);
+  }
+  return section;
+}
+
+/** A small subheading inside a section, e.g. one layer of the generator. */
+export function createSubheading(text) {
+  const h = document.createElement('h3');
+  h.className = 'group__subtitle';
+  h.textContent = text;
+  return h;
+}
+
+/**
+ * Sliders bound to a settings object.
  * @param {HTMLElement} parent  where to add the sliders
  * @param {Object} target       the settings object the sliders edit
  * @param {Array} specs         [{ key, label, min, max, step, digits, tip }]
- * @param {Function} onChange   called after any slider moves
+ * @param {Function} onChange   called with the key after any slider moves
+ * @returns {{ rows: Map<string, HTMLElement>, refresh: Function }}
+ *   rows: each slider's row by key (e.g. to hide ones that don't apply)
+ *   refresh(): re-read the values from `target` (after it changed elsewhere)
  */
 export function buildSliders(parent, target, specs, onChange) {
+  const rows = new Map();
+  const refreshers = [];
+
   for (const spec of specs) {
     const { key, label, min, max, step, digits = 2, tip } = spec;
     const inputId = nextId('control');
@@ -37,8 +75,11 @@ export function buildSliders(parent, target, specs, onChange) {
 
     const input = row.querySelector('input');
     const output = row.querySelector('output');
-    input.value = target[key];
-    output.textContent = Number(target[key]).toFixed(digits);
+    const show = () => {
+      input.value = target[key];
+      output.textContent = Number(target[key]).toFixed(digits);
+    };
+    show();
 
     input.addEventListener('input', () => {
       target[key] = parseFloat(input.value);
@@ -46,7 +87,65 @@ export function buildSliders(parent, target, specs, onChange) {
       onChange(key);
     });
     parent.appendChild(row);
+    rows.set(key, row);
+    refreshers.push(show);
   }
+  return { rows, refresh: () => refreshers.forEach((f) => f()) };
+}
+
+/**
+ * A dropdown.
+ * @param {Array<{value, label}>} options
+ * @returns {{ row: HTMLElement, select: HTMLSelectElement }}
+ */
+export function createSelect(label, options, value, onChange, tip) {
+  const id = nextId('select');
+  const row = document.createElement('div');
+  row.className = 'control control--select';
+  if (tip) row.dataset.tip = tip;
+  row.innerHTML = `<label class="control__label" for="${id}">${label}</label><select id="${id}"></select>`;
+  const select = row.querySelector('select');
+  for (const o of options) select.add(new Option(o.label, o.value));
+  select.value = value;
+  select.addEventListener('change', () => onChange(select.value));
+  return { row, select };
+}
+
+/** A checkbox with a label. Returns { row, input }. */
+export function createCheckbox(label, checked, onChange, tip) {
+  const id = nextId('check');
+  const row = document.createElement('div');
+  row.className = 'toggle';
+  if (tip) row.dataset.tip = tip;
+  row.innerHTML = `<input type="checkbox" id="${id}"><label for="${id}">${label}</label>`;
+  const input = row.querySelector('input');
+  input.checked = checked;
+  input.addEventListener('change', () => onChange(input.checked));
+  return { row, input };
+}
+
+/**
+ * A button, wrapped in a <span> that can carry a tooltip (see the note on
+ * .actions in painter.css about why the wrapper exists).
+ */
+export function createButton(label, onClick, { tip, primary = false } = {}) {
+  const wrap = document.createElement('span');
+  if (tip) wrap.dataset.tip = tip;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = primary ? 'button button--primary' : 'button';
+  button.textContent = label;
+  button.addEventListener('click', onClick);
+  wrap.appendChild(button);
+  return wrap;
+}
+
+/** A row of buttons. */
+export function createActions(...buttons) {
+  const row = document.createElement('div');
+  row.className = 'actions';
+  row.append(...buttons);
+  return row;
 }
 
 // Anything a keyboard user can focus.
@@ -67,7 +166,9 @@ const FOCUSABLE = 'input, select, button, [tabindex]';
  * skipped.
  */
 export function initTooltips(root = document) {
-  for (const el of root.querySelectorAll('[data-tip]')) {
+  const elements = [...root.querySelectorAll('[data-tip]')];
+  if (root instanceof Element && root.matches('[data-tip]')) elements.push(root);
+  for (const el of elements) {
     if (el.classList.contains('has-tip')) continue;
     const tip = document.createElement('span');
     tip.className = 'tip';
@@ -77,8 +178,7 @@ export function initTooltips(root = document) {
     el.classList.add('has-tip');
     el.appendChild(tip);
 
-    for (const control of el.querySelectorAll(FOCUSABLE)) {
-      control.setAttribute('aria-describedby', tip.id);
-    }
+    const controls = el.matches(FOCUSABLE) ? [el] : el.querySelectorAll(FOCUSABLE);
+    for (const control of controls) control.setAttribute('aria-describedby', tip.id);
   }
 }

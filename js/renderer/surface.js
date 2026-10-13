@@ -13,9 +13,9 @@
 //              height: r = paint thickness
 //            The canvas colour isn't stored at all; the lighting pass mixes
 //            it in, so it can be changed without repainting.
-//   back   - a spare copy; composites are written here, then front and back
-//            swap ("ping-pong"), because a shader can't read and write the
-//            same texture at once
+//   back   - a copy of front, plus the stroke in progress. This is what's
+//            shown on screen. A shader can't read and write the same texture
+//            at once, so composites read front and write back.
 //   stroke - scratch space for the ONE stroke currently being painted
 //            (r = thickness, g = coverage)
 //
@@ -25,15 +25,21 @@
 //   addDabs()      stamp dabs into the stroke buffer (MAX blending), then
 //                  composite "front + stroke" into back, so the stroke shows
 //                  up live while you're still dragging
-//   endStroke()    swap: back becomes the new front. The stroke is now
-//                  permanently part of the painting.
+//   endStroke()    copy the stroke's area from back into front. The stroke
+//                  is now permanently part of the painting, and front and
+//                  back are identical again.
 //
 // Keeping the stroke separate until it's finished is what lets overlapping
 // dabs WITHIN one stroke merge smoothly (MAX blending), while separate strokes
 // still pile up on top of each other (composite adds their heights).
+//
+// SPEED: every step above is limited to the stroke's bounding box using the
+// scissor test. A typical stroke covers a few percent of the canvas, so this
+// makes painting hundreds of strokes (the generator) many times faster than
+// processing the whole canvas for each one.
 // =============================================================================
 
-import { Program, createRenderTarget, clearTarget, bindTarget, drawFullscreen } from './gl-utils.js';
+import { Program, createRenderTarget, clearTarget, bindTarget, drawFullscreen, setScissor } from './gl-utils.js';
 import { FLOATS_PER_DAB } from '../strokes/stroke-path.js';
 
 export class PaintSurface {
@@ -57,6 +63,7 @@ export class PaintSurface {
 
     this.dabProgram = new Program(gl, shaders['dab.vert'], shaders['dab.frag'], 'dab');
     this.compositeProgram = new Program(gl, shaders['fullscreen.vert'], shaders['composite.frag'], 'composite');
+    this.copyProgram = new Program(gl, shaders['fullscreen.vert'], shaders['copy.frag'], 'copy');
 
     // --- Instance buffer for dabs ------------------------------------------------
     // A VAO (vertex array object) records how vertex data is laid out, so we
@@ -82,13 +89,20 @@ export class PaintSurface {
 
     this.brush = null;          // settings of the stroke in progress
     this.strokeActive = false;
-    this.strokeHasPaint = false;
+    this.box = null;            // bounding box of the stroke in progress
+    this.lastBox = null;        // ...and of the previous stroke
+    this.strokeCount = 0;       // strokes painted since the last clear
+
+    this.clear();
   }
 
   /** Wipe the painting back to bare canvas: zero coverage, zero height. */
   clear() {
     clearTarget(this.gl, this.front);
     clearTarget(this.gl, this.back);
+    clearTarget(this.gl, this.stroke);
+    this.lastBox = null;
+    this.strokeCount = 0;
   }
 
   /**
@@ -99,8 +113,18 @@ export class PaintSurface {
     const gl = this.gl;
     this.brush = brush;
     this.strokeActive = true;
-    this.strokeHasPaint = false;
-    clearTarget(gl, this.stroke);
+    this.box = null;
+
+    // The stroke buffer still holds the PREVIOUS stroke, but only inside
+    // that stroke's box, so that's all we need to clear.
+    if (this.lastBox) {
+      bindTarget(gl, this.stroke);
+      setScissor(gl, this.lastBox, this.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      setScissor(gl, null);
+      bindTarget(gl, null);
+    }
   }
 
   /**
@@ -111,6 +135,24 @@ export class PaintSurface {
     if (!this.strokeActive || dabs.length === 0) return;
     const gl = this.gl;
     const b = this.brush;
+
+    // Grow the stroke's bounding box to include these dabs. A dab reaches
+    // at most one radius from its centre; add 2px of safety margin.
+    const reach = b.radius + 2;
+    const box = this.box ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (let i = 0; i < dabs.length; i += FLOATS_PER_DAB) {
+      box.x0 = Math.min(box.x0, dabs[i] - reach);
+      box.y0 = Math.min(box.y0, dabs[i + 1] - reach);
+      box.x1 = Math.max(box.x1, dabs[i] + reach);
+      box.y1 = Math.max(box.y1, dabs[i + 1] + reach);
+    }
+    // Keep it inside the canvas.
+    box.x0 = Math.max(0, box.x0);
+    box.y0 = Math.max(0, box.y0);
+    box.x1 = Math.min(this.width, box.x1);
+    box.y1 = Math.min(this.height, box.y1);
+    this.box = box;
+    if (box.x1 <= box.x0 || box.y1 <= box.y0) return;   // entirely off-canvas
 
     bindTarget(gl, this.stroke);
     this.dabProgram.use()
@@ -139,7 +181,6 @@ export class PaintSurface {
     gl.disable(gl.BLEND);
     gl.blendEquation(gl.FUNC_ADD);  // put blending back to normal
 
-    this.strokeHasPaint = true;
     this.#compositeIntoBack();
   }
 
@@ -147,29 +188,30 @@ export class PaintSurface {
   endStroke() {
     if (!this.strokeActive) return;
     this.strokeActive = false;
-    // If no dabs were added, "back" doesn't hold a fresh composite, so we
-    // must NOT swap (we'd swap in a stale image).
-    if (this.strokeHasPaint) {
-      [this.front, this.back] = [this.back, this.front];
+    // If no dabs landed on the canvas, back is unchanged: nothing to copy.
+    if (this.box && this.box.x1 > this.box.x0 && this.box.y1 > this.box.y0) {
+      this.#copy(this.back, this.front, this.box);
+      this.lastBox = this.box;
+      this.strokeCount++;
     }
     this.brush = null;
   }
 
   /**
-   * The surface the lighting pass should show. While a stroke is in
-   * progress that's the live composite in "back", otherwise the painting.
+   * The textures the lighting pass should show. "back" always holds the
+   * painting plus any stroke in progress.
    * @returns {{ paint: WebGLTexture, height: WebGLTexture }}
    */
   get display() {
-    const target = (this.strokeActive && this.strokeHasPaint) ? this.back : this.front;
-    return { paint: target.textures[0], height: target.textures[1] };
+    return { paint: this.back.textures[0], height: this.back.textures[1] };
   }
 
-  /** Composite (front + stroke) into back. Writes both of back's textures. */
+  /** Composite (front + stroke) into back, inside the stroke's box only. */
   #compositeIntoBack() {
     const gl = this.gl;
     const b = this.brush;
     bindTarget(gl, this.back);
+    setScissor(gl, this.box, this.height);
     this.compositeProgram.use()
       .texture('uPaint', this.front.textures[0], 0)
       .texture('uHeight', this.front.textures[1], 1)
@@ -179,6 +221,20 @@ export class PaintSurface {
       .float('uPickup', b.pickup)
       .float('uThickness', b.thickness);
     drawFullscreen(gl);
+    setScissor(gl, null);
+    bindTarget(gl, null);
+  }
+
+  /** Copy a rectangle of both surface textures from one target to another. */
+  #copy(from, to, box) {
+    const gl = this.gl;
+    bindTarget(gl, to);
+    setScissor(gl, box, this.height);
+    this.copyProgram.use()
+      .texture('uPaint', from.textures[0], 0)
+      .texture('uHeight', from.textures[1], 1);
+    drawFullscreen(gl);
+    setScissor(gl, null);
     bindTarget(gl, null);
   }
 }
