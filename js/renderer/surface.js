@@ -8,7 +8,11 @@
 //
 // It holds three render targets (textures we can draw into):
 //
-//   front  - the painting as it stands (rgb = colour, a = paint height)
+//   front  - the painting as it stands, as TWO textures:
+//              paint:  rgb = paint colour, a = coverage (0 = bare canvas)
+//              height: r = paint thickness
+//            The canvas colour isn't stored at all; the lighting pass mixes
+//            it in, so it can be changed without repainting.
 //   back   - a spare copy; composites are written here, then front and back
 //            swap ("ping-pong"), because a shader can't read and write the
 //            same texture at once
@@ -29,7 +33,7 @@
 // still pile up on top of each other (composite adds their heights).
 // =============================================================================
 
-import { Program, createRenderTarget, bindTarget, drawFullscreen } from './gl-utils.js';
+import { Program, createRenderTarget, clearTarget, bindTarget, drawFullscreen } from './gl-utils.js';
 import { FLOATS_PER_DAB } from '../strokes/stroke-path.js';
 
 export class PaintSurface {
@@ -44,8 +48,11 @@ export class PaintSurface {
     this.width = width;
     this.height = height;
 
-    this.front  = createRenderTarget(gl, width, height);
-    this.back   = createRenderTarget(gl, width, height);
+    // Surface targets have two textures: [0] paint (RGBA), [1] height. Height
+    // only needs one channel, so it uses R16F (one half-float per pixel).
+    const surfaceLayout = { attachments: [{}, { internalFormat: gl.R16F, format: gl.RED }] };
+    this.front  = createRenderTarget(gl, width, height, surfaceLayout);
+    this.back   = createRenderTarget(gl, width, height, surfaceLayout);
     this.stroke = createRenderTarget(gl, width, height);
 
     this.dabProgram = new Program(gl, shaders['dab.vert'], shaders['dab.frag'], 'dab');
@@ -78,19 +85,10 @@ export class PaintSurface {
     this.strokeHasPaint = false;
   }
 
-  /**
-   * Wipe the painting back to a bare, primed canvas.
-   * @param {number[]} groundColor  sRGB [r, g, b] in 0..1
-   */
-  clear(groundColor) {
-    const gl = this.gl;
-    for (const target of [this.front, this.back]) {
-      bindTarget(gl, target);
-      // Alpha (= height) 0: no paint yet, just the ground colour.
-      gl.clearColor(groundColor[0], groundColor[1], groundColor[2], 0.0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-    }
-    bindTarget(gl, null);
+  /** Wipe the painting back to bare canvas: zero coverage, zero height. */
+  clear() {
+    clearTarget(this.gl, this.front);
+    clearTarget(this.gl, this.back);
   }
 
   /**
@@ -102,10 +100,7 @@ export class PaintSurface {
     this.brush = brush;
     this.strokeActive = true;
     this.strokeHasPaint = false;
-    bindTarget(gl, this.stroke);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    bindTarget(gl, null);
+    clearTarget(gl, this.stroke);
   }
 
   /**
@@ -161,21 +156,24 @@ export class PaintSurface {
   }
 
   /**
-   * The texture the lighting pass should show. While a stroke is in
+   * The surface the lighting pass should show. While a stroke is in
    * progress that's the live composite in "back", otherwise the painting.
+   * @returns {{ paint: WebGLTexture, height: WebGLTexture }}
    */
-  get displayTexture() {
-    return (this.strokeActive && this.strokeHasPaint) ? this.back.texture : this.front.texture;
+  get display() {
+    const target = (this.strokeActive && this.strokeHasPaint) ? this.back : this.front;
+    return { paint: target.textures[0], height: target.textures[1] };
   }
 
-  /** Composite (front + stroke) into back. */
+  /** Composite (front + stroke) into back. Writes both of back's textures. */
   #compositeIntoBack() {
     const gl = this.gl;
     const b = this.brush;
     bindTarget(gl, this.back);
     this.compositeProgram.use()
-      .texture('uSurface', this.front.texture, 0)
-      .texture('uStroke', this.stroke.texture, 1)
+      .texture('uPaint', this.front.textures[0], 0)
+      .texture('uHeight', this.front.textures[1], 1)
+      .texture('uStroke', this.stroke.texture, 2)
       .vec3('uColor', b.color[0], b.color[1], b.color[2])
       .float('uFlatten', b.flatten)
       .float('uPickup', b.pickup)

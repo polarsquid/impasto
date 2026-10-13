@@ -25,8 +25,9 @@ Needs a WebGL2 browser (any current Chrome, Firefox, Safari or Edge).
 
 ## How it works
 
-Paint is stored on the GPU as a **height field**: every pixel has a colour
-and a paint thickness. Thickness alone is invisible; impasto reads as
+Paint is stored on the GPU as a **height field**: every pixel has a paint
+colour, a coverage (how much of the canvas the paint hides) and a paint
+thickness. Thickness alone is invisible; impasto reads as
 impasto because light catches the ridges and shadows fall into the grooves.
 So the image you see is a lighting calculation run over that height field
 every time something changes.
@@ -49,10 +50,13 @@ pointer / generator          StrokePath            PaintSurface               Li
    grooves, ragged edges, and dry-brush breakup as the load runs out.
 3. **Composite** (`shaders/composite.frag`). The finished stroke is laid on
    the painting: its height stacks on top, the brush flattens the paint it
-   presses on, and it picks up a little wet colour in its thin parts.
+   presses on, and it picks up a little wet colour in its thin parts. Colour
+   and height go to two textures in one pass (multiple render targets).
 4. **Lighting** (`shaders/lighting.frag`). Surface normals from neighbouring
    heights, diffuse light, a glossy sheen, ray-marched cast shadows,
-   crevice darkening, and canvas weave where the paint is thin.
+   crevice darkening, and canvas weave where the paint is thin. The canvas
+   colour is mixed in here using the coverage, which is why changing it
+   updates instantly, even under existing paint.
 
 Every file is heavily commented; start at `js/main.js` and follow the
 imports.
@@ -73,7 +77,7 @@ js/strokes/
   test-strokes.js       quick test composition (placeholder for phase 2)
 js/ui/
   light-pad.js          drag-the-lamp light control
-  controls.js           slider builder
+  controls.js           slider builder and hover tooltips
 shaders/                GLSL shader programs
 fonts/                  XBAND_Rough.ttf (used from phase 3)
 presets/                saved background presets (from phase 4)

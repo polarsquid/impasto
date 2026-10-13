@@ -28,44 +28,65 @@
         <p class="panel__intro">Drag on the painting to lay down paint. Move the lamp to see the relief.</p>
       </header>
 
+      <!--
+        Tooltips: any element with data-tip="..." gets a hover/focus tooltip
+        (built by initTooltips() in js/ui/controls.js). Sliders get theirs
+        from the "tip" text in main.js.
+      -->
       <section class="group">
         <h2 class="group__title">Light</h2>
-        <div id="light-pad" class="light-pad"></div>
-        <label class="toggle">
-          <input type="checkbox" id="orbit"> Orbit the light
-        </label>
+        <div class="light-pad-wrap" data-tip="Drag the lamp to move the light. Near the centre, light falls from overhead and the paint looks flatter. Near the rim, light skims across the surface and every ridge throws a shadow.">
+          <div id="light-pad" class="light-pad"></div>
+        </div>
+        <div class="toggle" data-tip="Slowly circles the light around the painting, so you can see the relief from every side.">
+          <input type="checkbox" id="orbit">
+          <label for="orbit">Orbit the light</label>
+        </div>
         <div id="light-controls"></div>
       </section>
 
       <section class="group">
         <h2 class="group__title">Canvas</h2>
+        <div class="control control--ground" data-tip="The colour of the primed canvas under the paint. It shows wherever paint is thin or missing, and it changes instantly, even under paint you've already laid down.">
+          <span class="control__label" id="ground-label">Canvas colour</span>
+          <!-- Swatches are filled in by main.js from GROUND_SWATCHES. -->
+          <div class="swatches" id="ground-swatches" role="group" aria-labelledby="ground-label">
+            <input type="color" id="ground-color" aria-label="Custom canvas colour">
+          </div>
+        </div>
         <div id="canvas-controls"></div>
       </section>
 
       <section class="group">
         <h2 class="group__title">Test brush</h2>
-        <label class="control control--color">
-          <span class="control__label">Colour</span>
+        <div class="control control--color" data-tip="The colour of the paint on the test brush.">
+          <label class="control__label" for="brush-color">Colour</label>
           <input type="color" id="brush-color" value="#1f3a68">
-        </label>
+        </div>
         <div id="brush-controls"></div>
       </section>
 
       <section class="group">
         <h2 class="group__title">View</h2>
-        <label class="control control--select">
-          <span class="control__label">Show</span>
+        <div class="control control--select" data-tip="Swap the finished view for the data behind it: flat colour with no lighting, the height map (lighter means thicker paint), or surface normals (the colours show which way each bit of paint faces).">
+          <label class="control__label" for="view-mode">Show</label>
           <select id="view-mode">
             <option value="0">Lit painting</option>
             <option value="1">Colour only</option>
             <option value="2">Height map</option>
             <option value="3">Surface normals</option>
           </select>
-        </label>
+        </div>
         <div class="actions">
-          <button id="test-paint" class="button button--primary">New test painting</button>
-          <button id="clear" class="button">Clear canvas</button>
-          <button id="save" class="button">Save PNG</button>
+          <span data-tip="Clears the canvas and paints a fresh random composition.">
+            <button id="test-paint" class="button button--primary">New test painting</button>
+          </span>
+          <span data-tip="Removes all the paint, leaving bare canvas.">
+            <button id="clear" class="button">Clear canvas</button>
+          </span>
+          <span data-tip="Downloads the painting exactly as shown, at full resolution (1080 × 1350).">
+            <button id="save" class="button">Save PNG</button>
+          </span>
         </div>
       </section>
     </aside>

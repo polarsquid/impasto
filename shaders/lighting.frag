@@ -20,12 +20,15 @@ precision highp float;
 //   5. darkens small crevices that ambient light can't reach (ambient
 //      occlusion).
 //
-// Plus a woven canvas texture that shows through where the paint is thin.
+// Plus the canvas itself: its colour shows wherever paint coverage is
+// incomplete, and its woven texture shows through where the paint is thin.
 // =============================================================================
 
 in vec2 vUv;
 
-uniform sampler2D uSurface;   // rgb = colour (sRGB), a = paint height
+uniform sampler2D uPaint;     // rgb = paint colour (sRGB), a = coverage 0..1
+uniform sampler2D uHeight;    // r = paint height
+uniform vec3  uGround;        // canvas colour under the paint (sRGB)
 uniform vec2  uSurfaceSize;   // surface size in pixels
 uniform vec2  uTexel;         // size of one pixel in uv units = 1 / size
 
@@ -66,7 +69,7 @@ float weave(vec2 uv) {
 // Paint height plus canvas weave. The weave fades out where paint is thick,
 // because thick paint buries the texture of the canvas underneath it.
 float heightAt(vec2 uv) {
-  float paint = texture(uSurface, uv).a;
+  float paint = texture(uHeight, uv).r;
   float canvasShows = 1.0 - smoothstep(0.0, 0.25, paint);
   return paint + weave(uv) * uWeave * canvasShows;
 }
@@ -102,8 +105,14 @@ vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
 vec3 toSrgb(vec3 c)   { return pow(c, vec3(1.0 / 2.2)); }
 
 void main() {
-  vec4 surface = texture(uSurface, vUv);
+  vec4  paint       = texture(uPaint, vUv);
+  float paintHeight = texture(uHeight, vUv).r;
   float h = heightAt(vUv);
+
+  // What colour is this spot? Paint over canvas, by coverage. Because the
+  // ground colour is mixed in HERE rather than stored in the paint, changing
+  // the canvas colour updates instantly, even under existing strokes.
+  vec3 surfaceColor = mix(uGround, paint.rgb, paint.a);
 
   // --- 1. Surface normal from neighbouring heights -----------------------------
   // The slope in x is (height on the right - height on the left) / 2 pixels.
@@ -119,7 +128,7 @@ void main() {
                                1.0));
 
   // Debug views, handy for understanding what's going on.
-  if (uViewMode == 1) { outColor = vec4(surface.rgb, 1.0); return; }
+  if (uViewMode == 1) { outColor = vec4(surfaceColor, 1.0); return; }
   if (uViewMode == 2) { outColor = vec4(vec3(h * 0.6), 1.0); return; }
   if (uViewMode == 3) { outColor = vec4(normal * 0.5 + 0.5, 1.0); return; }
 
@@ -135,7 +144,7 @@ void main() {
   vec3 halfVec = normalize(uLightDir + vec3(0.0, 0.0, 1.0));
   float spec = pow(max(dot(normal, halfVec), 0.0), uShininess);
   // Oil paint is glossy; bare canvas is matte.
-  float paintiness = smoothstep(0.02, 0.2, surface.a);
+  float paintiness = smoothstep(0.02, 0.2, paintHeight);
   spec *= uSpecular * mix(0.05, 1.0, paintiness);
 
   // --- 4. Cast shadows --------------------------------------------------------------
@@ -153,7 +162,7 @@ void main() {
   float ao = 1.0 - clamp(cavity * uDepth * 0.12 * uOcclusion, 0.0, 0.6);
 
   // --- Combine ----------------------------------------------------------------------
-  vec3 albedo = toLinear(surface.rgb);
+  vec3 albedo = toLinear(surfaceColor);
   vec3 light  = uAmbient * ao + uLightColor * diffuse * shadow;
   vec3 color  = albedo * light + uLightColor * spec * shadow;
 

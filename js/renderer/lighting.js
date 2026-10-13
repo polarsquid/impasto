@@ -40,18 +40,20 @@ export class LightingPass {
 
   /**
    * Draw the lit painting to the screen.
-   * @param {WebGLTexture} surfaceTexture  colour + height
+   * @param {{paint, height}} surface  the two surface textures (PaintSurface.display)
    * @param {number} width   surface width in pixels
    * @param {number} height  surface height in pixels
    * @param {Object} s       lighting settings (see DEFAULT_LIGHT in main.js)
    */
-  render(surfaceTexture, width, height, s) {
+  render(surface, width, height, s) {
     const gl = this.gl;
     const [lx, ly, lz] = lightDirection(s.azimuth, s.elevation);
 
     bindTarget(gl, null);  // null = the visible canvas
     this.program.use()
-      .texture('uSurface', surfaceTexture, 0)
+      .texture('uPaint', surface.paint, 0)
+      .texture('uHeight', surface.height, 1)
+      .vec3('uGround', s.ground[0], s.ground[1], s.ground[2])
       .vec2('uSurfaceSize', width, height)
       .vec2('uTexel', 1 / width, 1 / height)
       .vec3('uLightDir', lx, ly, lz)
