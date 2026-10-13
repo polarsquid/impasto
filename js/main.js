@@ -23,7 +23,7 @@ import { attachPointerBrush } from './strokes/pointer-brush.js';
 import { hexToRgb } from './color/pigment.js';
 import { buildSharedSections } from './ui/shared-sections.js';
 import { createTabs } from './ui/tabs.js';
-import { initTooltips } from './ui/controls.js';
+import { initTooltips, resetInPlace } from './ui/controls.js';
 import { brushPhase } from './phases/phase1-brush.js';
 import { generatorPhase } from './phases/phase2-generator.js';
 
@@ -43,16 +43,16 @@ const SHADER_FILES = [
 // --- Shared settings ------------------------------------------------------------
 // One set for the whole app: the light, canvas and brush are the same in
 // every tab. These objects are edited directly by the sliders.
+//
+// The defaults are FUNCTIONS that return a fresh object each time, so
+// "Reset all settings" can get a clean copy to reset from.
 
 const DEFAULT_GROUND = '#d8cfbd';
 const DEFAULT_BRUSH_COLOR = '#1f3a68';
 
-const settings = {
-  defaultGround: DEFAULT_GROUND,
-  defaultBrushColor: DEFAULT_BRUSH_COLOR,
-
-  // Everything the lighting pass needs: the light itself plus the canvas.
-  light: {
+/** Everything the lighting pass needs: the light itself plus the canvas. */
+function defaultLight() {
+  return {
     ground: hexToRgb(DEFAULT_GROUND),  // canvas colour (sRGB 0..1)
     azimuth: 315,     // light from the top left (degrees, 0 = top)
     elevation: 32,    // fairly low, raking light shows off the relief
@@ -65,11 +65,15 @@ const settings = {
     weave: 0.15,
     weaveScale: 5,
     viewMode: 0,
-  },
+  };
+}
 
-  // The brush. The "character" settings (tip to pickup) are shared with the
-  // generator; size, thickness, load and colour are for the hand brush only.
-  brush: {
+/**
+ * The brush. The "character" settings (tip to pickup) are shared with the
+ * generator; size, thickness, load and colour are for the hand brush only.
+ */
+function defaultBrush() {
+  return {
     radius: 30,        // px
     thickness: 1.0,    // paint units
     loadLength: 500,   // px of travel before the paint is mostly used up
@@ -81,7 +85,14 @@ const settings = {
     ridge: 0.35,       // edge ridge height
     flatten: 0.55,     // how much the brush squashes paint under it
     pickup: 0.35,      // how much wet paint underneath mixes into the brush
-  },
+  };
+}
+
+const settings = {
+  defaultGround: DEFAULT_GROUND,
+  defaultBrushColor: DEFAULT_BRUSH_COLOR,
+  light: defaultLight(),
+  brush: defaultBrush(),
 };
 
 // --- Start up ----------------------------------------------------------------------
@@ -121,6 +132,22 @@ async function start() {
       activePhase?.notify?.(kind);
     },
 
+    /**
+     * Put every setting in every tab back to its default. Shared settings
+     * are reset here; each phase resets its own (and the generator then
+     * repaints with them).
+     */
+    resetAllSettings() {
+      resetInPlace(settings.light, defaultLight());
+      resetInPlace(settings.brush, defaultBrush());
+      app.orbiting = false;
+      refreshShared();
+      for (const phase of PHASES) {
+        if (phase.initialized) phase.reset?.(app);
+      }
+      needsRender = true;
+    },
+
     clearPainting() {
       activePhase?.surface.clear();
       needsRender = true;
@@ -141,7 +168,7 @@ async function start() {
   };
 
   // --- Panel ---------------------------------------------------------------------------
-  const { sections: shared } = buildSharedSections(app);
+  const { sections: shared, refresh: refreshShared } = buildSharedSections(app);
   const panelBody = document.getElementById('phase-panel');
   const introEl = document.getElementById('phase-intro');
 

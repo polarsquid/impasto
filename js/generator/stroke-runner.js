@@ -8,13 +8,19 @@
 //   watch     - paint a batch of strokes each animation frame, so you can
 //               see the painting build up layer by layer
 //
-// "Watch" mode uses a time budget rather than a fixed number of strokes per
-// frame: keep painting until ~10ms of the frame are used, then hand control
-// back to the browser so the page stays smooth. A slow computer just takes
-// more frames, without stuttering.
+// "Watch" mode paints at a steady pace: a fixed number of strokes per frame,
+// chosen so a whole painting takes about WATCH_SECONDS. (Sending a stroke to
+// the GPU takes JavaScript almost no time, so without a fixed pace a fast
+// computer would finish the whole painting in a frame or two and there'd be
+// nothing to watch.) There's also a time budget per frame as a safety
+// limit: on a slow computer, a frame stops early rather than stuttering,
+// and the painting simply takes longer.
 // =============================================================================
 
 import { StrokePath, FLOATS_PER_DAB } from '../strokes/stroke-path.js';
+
+/** Roughly how long "watch it paint" takes for a whole painting. */
+const WATCH_SECONDS = 4;
 
 /** Paint one planned stroke from start to finish. */
 export function paintJob(surface, job) {
@@ -95,9 +101,12 @@ export class StrokeRunner {
 
   #loop(state) {
     this.paused = state;
+    // Strokes per frame, assuming ~60 frames a second.
+    const perFrame = Math.max(1, Math.ceil(state.jobs.length / (WATCH_SECONDS * 60)));
     const step = () => {
-      const deadline = performance.now() + 10;   // ~10ms of painting per frame
-      while (state.next < state.jobs.length && performance.now() < deadline) {
+      const deadline = performance.now() + 12;   // safety limit: 12ms per frame
+      const stop = Math.min(state.jobs.length, state.next + perFrame);
+      while (state.next < stop && performance.now() < deadline) {
         paintJob(state.surface, state.jobs[state.next++]);
       }
       this.hooks.onProgress(state.next, state.jobs.length);

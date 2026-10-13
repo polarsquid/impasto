@@ -182,3 +182,31 @@ export function initTooltips(root = document) {
     for (const control of controls) control.setAttribute('aria-describedby', tip.id);
   }
 }
+
+/**
+ * Put a settings object back to its defaults, IN PLACE.
+ *
+ * Why not just replace it with a fresh defaults object? Because the sliders
+ * hold a reference to the exact object they edit. Replace the object and
+ * they'd carry on editing the old, forgotten one. So instead we copy each
+ * default value into the existing object (and into the objects nested
+ * inside it), keeping every object the same one the controls know about.
+ * After this, call the controls' refresh functions so they show the values.
+ *
+ * @param {Object} target    the live settings object
+ * @param {Object} defaults  a fresh copy of the default settings
+ */
+export function resetInPlace(target, defaults) {
+  for (const [key, value] of Object.entries(defaults)) {
+    const current = target[key];
+    const isObject = (v) => v !== null && typeof v === 'object';
+    if (Array.isArray(value) && Array.isArray(current) && value.length === current.length && value.every(isObject)) {
+      // An array of objects (e.g. palette slots): reset each one in place.
+      value.forEach((item, i) => resetInPlace(current[i], item));
+    } else if (isObject(value) && !Array.isArray(value) && isObject(current)) {
+      resetInPlace(current, value);   // a nested settings object
+    } else {
+      target[key] = Array.isArray(value) ? value.slice() : value;   // a plain value
+    }
+  }
+}

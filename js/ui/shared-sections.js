@@ -11,9 +11,14 @@
 // changes they call app.notify(kind) with one of:
 //   'light' | 'canvas' | 'character' | 'brush' | 'view'
 // so the active phase can react (the generator repaints on 'character').
+//
+// Each section also registers a refresh function in `refreshers`. Calling
+// them all (the refresh() returned by buildSharedSections) makes every
+// control re-read its value from the settings, which is how "Reset all
+// settings" updates the panel.
 // =============================================================================
 
-import { hexToRgb } from '../color/pigment.js';
+import { hexToRgb, rgbToHex } from '../color/pigment.js';
 import { createLightPad } from './light-pad.js';
 import {
   createSection, buildSliders, createSelect, createCheckbox, createButton, createActions,
@@ -34,24 +39,26 @@ export const GROUND_SWATCHES = [
 /**
  * Build all shared sections.
  * @param {Object} app  the app context from main.js
- * @returns {{ sections: Object<string, HTMLElement>, lightPad }}
+ * @returns {{ sections: Object<string, HTMLElement>, refresh: Function }}
  */
 export function buildSharedSections(app) {
   const { light, brush } = app.settings;
+  const refreshers = [];
   return {
     sections: {
-      light:     buildLightSection(app, light),
-      canvas:    buildCanvasSection(app, light),
-      character: buildCharacterSection(app, brush),
-      brush:     buildBrushSection(app, brush),
-      view:      buildViewSection(app, light),
+      light:     buildLightSection(app, light, refreshers),
+      canvas:    buildCanvasSection(app, light, refreshers),
+      character: buildCharacterSection(app, brush, refreshers),
+      brush:     buildBrushSection(app, brush, refreshers),
+      view:      buildViewSection(app, light, refreshers),
     },
+    refresh: () => refreshers.forEach((f) => f()),
   };
 }
 
 // --- Light ----------------------------------------------------------------------
 
-function buildLightSection(app, light) {
+function buildLightSection(app, light, refreshers) {
   const section = createSection('Light');
   const changed = () => app.notify('light');
 
@@ -69,8 +76,9 @@ function buildLightSection(app, light) {
   const orbit = createCheckbox('Orbit the light', false, (on) => { app.orbiting = on; },
     'Slowly circles the light around the painting, so you can see the relief from every side.');
   section.appendChild(orbit.row);
+  refreshers.push(() => { orbit.input.checked = app.orbiting; app.lightPad.refresh(); });
 
-  buildSliders(section, light, [
+  const lightSliders = buildSliders(section, light, [
     { key: 'depth', label: 'Paint depth', min: 0, max: 15, step: 0.1, digits: 1,
       tip: 'How tall the paint stands. Higher makes ridges and grooves deeper and shadows longer. 0 makes the paint look flat.' },
     { key: 'shadow', label: 'Shadows', min: 0, max: 1, step: 0.01,
@@ -84,12 +92,13 @@ function buildLightSection(app, light) {
     { key: 'occlusion', label: 'Crevice darkening', min: 0, max: 2, step: 0.01,
       tip: 'Darkens the deep gaps between ridges of paint, where surrounding light struggles to reach.' },
   ], changed);
+  refreshers.push(lightSliders.refresh);
   return section;
 }
 
 // --- Canvas ---------------------------------------------------------------------
 
-function buildCanvasSection(app, light) {
+function buildCanvasSection(app, light, refreshers) {
   const section = createSection('Canvas');
   const changed = () => app.notify('canvas');
 
@@ -106,12 +115,18 @@ function buildCanvasSection(app, light) {
   const swatchRow = row.querySelector('.swatches');
   const picker = row.querySelector('input');
 
-  function setGround(hex) {
-    light.ground = hexToRgb(hex);
+  // Show which swatch (if any) matches the current canvas colour.
+  function showGround() {
+    const hex = rgbToHex(light.ground);
     picker.value = hex;
     for (const b of swatchRow.querySelectorAll('.swatch')) {
       b.setAttribute('aria-pressed', String(b.dataset.hex === hex));
     }
+  }
+
+  function setGround(hex) {
+    light.ground = hexToRgb(hex);
+    showGround();
     changed();  // no repainting needed: the lighting pass mixes it in
   }
 
@@ -128,13 +143,15 @@ function buildCanvasSection(app, light) {
   picker.addEventListener('input', () => setGround(picker.value));
   setGround(app.settings.defaultGround);
   section.appendChild(row);
+  refreshers.push(showGround);
 
-  buildSliders(section, light, [
+  const canvasSliders = buildSliders(section, light, [
     { key: 'weave', label: 'Weave depth', min: 0, max: 0.6, step: 0.01,
       tip: "How strongly the canvas's woven texture shows. It only shows through thin paint; thick paint buries it." },
     { key: 'weaveScale', label: 'Thread size', min: 2, max: 12, step: 0.5, digits: 1,
       tip: 'Spacing of the canvas threads, in pixels. Small is fine linen; large is coarse burlap.' },
   ], changed);
+  refreshers.push(canvasSliders.refresh);
   return section;
 }
 
@@ -142,11 +159,11 @@ function buildCanvasSection(app, light) {
 // How the paint and bristles behave. Shared by the hand brush AND the
 // generator, so the whole painting has one consistent "handwriting".
 
-function buildCharacterSection(app, brush) {
+function buildCharacterSection(app, brush, refreshers) {
   const section = createSection('Paint character', {
     note: 'How every stroke looks, painted by hand or generated.',
   });
-  buildSliders(section, brush, [
+  const sliders = buildSliders(section, brush, [
     { key: 'tipShape', label: 'Tip flatness', min: 1, max: 4, step: 0.1, digits: 1,
       tip: '1 is a round brush with rounded stroke ends. Higher is a flat brush with squarer ends.' },
     { key: 'edgeWobble', label: 'Ragged edges', min: 0, max: 1, step: 0.01,
@@ -162,12 +179,13 @@ function buildCharacterSection(app, brush) {
     { key: 'pickup', label: 'Wet pickup', min: 0, max: 1, step: 0.01,
       tip: 'How much wet paint already on the canvas gets dragged into a new stroke. The colours mix like real pigment: blue through yellow streaks green.' },
   ], () => app.notify('character'));
+  refreshers.push(sliders.refresh);
   return section;
 }
 
 // --- Hand brush ---------------------------------------------------------------------
 
-function buildBrushSection(app, brush) {
+function buildBrushSection(app, brush, refreshers) {
   const section = createSection('Hand brush', {
     note: 'Drag on the painting to paint with it.',
   });
@@ -183,7 +201,7 @@ function buildBrushSection(app, brush) {
   });
   section.appendChild(colorRow);
 
-  buildSliders(section, brush, [
+  const sliders = buildSliders(section, brush, [
     { key: 'radius', label: 'Size', min: 4, max: 90, step: 1, digits: 0,
       tip: 'Half the width of the brush, in pixels.' },
     { key: 'thickness', label: 'Paint thickness', min: 0.1, max: 3, step: 0.05,
@@ -191,12 +209,16 @@ function buildBrushSection(app, brush) {
     { key: 'loadLength', label: 'Paint load', min: 60, max: 2000, step: 10, digits: 0,
       tip: 'How far the brush travels (in pixels) before running dry. A small load breaks into scratchy bristle marks quickly.' },
   ], () => app.notify('brush'));
+  refreshers.push(() => {
+    colorRow.querySelector('input').value = rgbToHex(brush.color);
+    sliders.refresh();
+  });
   return section;
 }
 
 // --- View -------------------------------------------------------------------------------
 
-function buildViewSection(app, light) {
+function buildViewSection(app, light, refreshers) {
   const section = createSection('View');
   const view = createSelect('Show', [
     { value: '0', label: 'Lit painting' },
@@ -208,12 +230,17 @@ function buildViewSection(app, light) {
     app.notify('view');
   }, 'Swap the finished view for the data behind it: flat colour with no lighting, the height map (lighter means thicker paint), or surface normals (the colours show which way each bit of paint faces).');
   section.appendChild(view.row);
+  refreshers.push(() => { view.select.value = String(light.viewMode); });
 
   section.appendChild(createActions(
     createButton('Clear canvas', () => app.clearPainting(),
       { tip: "Removes all the paint from this tab's painting, leaving bare canvas." }),
     createButton('Save PNG', () => app.savePng(),
       { tip: 'Downloads the painting exactly as shown, at full resolution (1080 × 1350).' }),
+    createButton('Reset all settings', () => {
+      // A quick "are you sure?", since it can't be undone.
+      if (window.confirm('Reset every setting in every tab to its starting value?')) app.resetAllSettings();
+    }, { tip: 'Puts every setting in every tab back to its starting value, after asking to confirm. The generator repaints with the default settings; the test painting stays as it is.' }),
   ));
   return section;
 }

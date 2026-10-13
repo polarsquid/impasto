@@ -20,7 +20,7 @@ import { FIELD_TYPES } from '../generator/flow-field.js';
 import { PALETTE_PRESETS } from '../generator/palettes.js';
 import {
   createSection, createSubheading, buildSliders, createSelect, createCheckbox,
-  createButton, createActions,
+  createButton, createActions, resetInPlace,
 } from '../ui/controls.js';
 
 // The brush settings that describe the paint's character. The generator
@@ -40,6 +40,9 @@ export const generatorPhase = {
     this.surface = app.createSurface();
     this.watch = false;
     this.repaintTimer = null;
+    // Functions that make this tab's controls re-read their values from
+    // this.settings; run after "Reset all settings".
+    this.refreshers = [];
 
     this.runner = new StrokeRunner({
       onProgress: (done, total) => {
@@ -65,6 +68,14 @@ export const generatorPhase = {
   // Shared settings changed. Paint character affects generated strokes.
   notify(kind) {
     if (kind === 'character') this.scheduleRepaint();
+  },
+
+  // "Reset all settings": back to defaults, update the controls, repaint.
+  reset() {
+    resetInPlace(this.settings, defaultGeneratorSettings());
+    this.watch = false;
+    this.refreshers.forEach((refresh) => refresh());
+    this.repaint();
   },
 
   // The hand brush can't paint while the generator is still painting:
@@ -120,8 +131,12 @@ export const generatorPhase = {
     section.appendChild(seedRow);
 
     const watch = createCheckbox('Watch it paint', this.watch, (on) => { this.watch = on; },
-      'Paints the background stroke by stroke so you can watch it build up, instead of all at once.');
+      'Paints the background stroke by stroke over a few seconds, so you can watch it build up layer by layer. Applies to the next repaint.');
     section.appendChild(watch.row);
+    this.refreshers.push(() => {
+      seedInput.value = this.settings.seed;
+      watch.input.checked = this.watch;
+    });
 
     section.appendChild(createActions(
       createButton('New seed', () => {
@@ -178,6 +193,11 @@ export const generatorPhase = {
     section.appendChild(type.row);
     section.append(...sliders.rows.values());
     updateVisibility();
+    this.refreshers.push(() => {
+      type.select.value = field.type;
+      sliders.refresh();
+      updateVisibility();
+    });
     return section;
   },
 
@@ -192,16 +212,29 @@ export const generatorPhase = {
     const slotInputs = [];
     const slots = document.createElement('div');
     slots.className = 'palette';
-    slots.dataset.tip = 'Each colour and how much of it to use. A weight of 2 is used twice as often as 1; drag a weight to 0 to leave that colour out.';
+    slots.dataset.tip = 'Each colour and how much of it to use. A weight of 2 is used twice as often as 1; drag a weight to 0 to leave that colour out. The last two colours in use (marked "base") also paint the underpainting on their own.';
+
+    // Mark the last two colours in use: those form the underpainting.
+    // Recalculated whenever a weight changes, since switching a colour off
+    // moves the marker to the next one up.
+    const tags = [];
+    const markBase = () => {
+      const active = palette.colors.map((c, i) => (c.weight > 0 ? i : -1)).filter((i) => i >= 0);
+      const base = new Set(active.slice(-2));
+      tags.forEach((tag, i) => { tag.hidden = !base.has(i); });
+    };
+
     palette.colors.forEach((slot, i) => {
       const row = document.createElement('div');
       row.className = 'palette__slot';
       row.innerHTML = `
         <input type="color" aria-label="Colour ${i + 1}">
         <input type="range" min="0" max="3" step="0.05" aria-label="Amount of colour ${i + 1}">
-        <output></output>`;
+        <output></output>
+        <span class="palette__tag">base</span>`;
       const [color, weight] = row.querySelectorAll('input');
       const output = row.querySelector('output');
+      tags.push(row.querySelector('.palette__tag'));
       const show = () => {
         color.value = slot.hex;
         weight.value = slot.weight;
@@ -212,12 +245,14 @@ export const generatorPhase = {
       weight.addEventListener('input', () => {
         slot.weight = parseFloat(weight.value);
         show();
+        markBase();
         changed();
       });
       show();
       slotInputs.push(show);
       slots.appendChild(row);
     });
+    markBase();
 
     const presets = createSelect('Load colours',
       [{ value: '', label: 'Choose a palette…' }, ...PALETTE_PRESETS.map((p) => ({ value: p.name, label: p.name }))],
@@ -226,18 +261,24 @@ export const generatorPhase = {
         if (!preset) return;
         preset.colors.forEach((hex, i) => { palette.colors[i].hex = hex; palette.colors[i].weight = 1; });
         slotInputs.forEach((show) => show());
+        markBase();
         presets.select.value = '';   // back to the placeholder, ready for next time
         this.repaint();
       }, 'Replaces the six colours below with a ready-made palette. You can adjust them afterwards.');
 
     section.appendChild(presets.row);
     section.appendChild(slots);
-    buildSliders(section, palette, [
+    const paletteSliders = buildSliders(section, palette, [
       { key: 'mixing', label: 'Palette mixing', min: 0, max: 1, step: 0.01,
         tip: "How often a stroke's colour is mixed with a second palette colour, like a brush dragged through a neighbouring puddle of paint. Mixes like real pigment." },
       { key: 'variation', label: 'Colour variation', min: 0, max: 0.3, step: 0.01,
         tip: 'How much each stroke is randomly lightened or darkened, so strokes of the same colour are not all identical.' },
     ], changed);
+    this.refreshers.push(() => {
+      slotInputs.forEach((show) => show());
+      markBase();
+      paletteSliders.refresh();
+    });
     return section;
   },
 
@@ -249,10 +290,11 @@ export const generatorPhase = {
     });
     const changed = () => this.scheduleRepaint();
 
-    buildSliders(section, this.settings, [
-      { key: 'coverage', label: 'Overall coverage', min: 0, max: 2, step: 0.01,
-        tip: 'Scales the number of strokes in every layer at once. Lower lets more bare canvas show through.' },
+    const coverage = buildSliders(section, this.settings, [
+      { key: 'coverage', label: 'Overall coverage', min: 0, max: 1, step: 0.01,
+        tip: "Scales every layer's amount at once. 1 leaves each layer's amount as set; lower lets more bare canvas show through everywhere." },
     ], changed);
+    this.refreshers.push(coverage.refresh);
 
     // Per-layer ranges: sizes that suit each layer's job.
     const ranges = {
@@ -261,7 +303,7 @@ export const generatorPhase = {
       accents: { size: [3, 40],   length: [15, 300] },
     };
     const descriptions = {
-      under: 'big, thin strokes that block in colour',
+      under: 'big, thin strokes that block in colour, using only the last two palette colours',
       body: 'the main mass of paint',
       accents: 'small, thick strokes that stand highest',
     };
@@ -270,9 +312,9 @@ export const generatorPhase = {
       const r = ranges[layer.key];
       const d = descriptions[layer.key];
       section.appendChild(createSubheading(layer.label));
-      buildSliders(section, this.settings.layers[layer.key], [
-        { key: 'density', label: 'Amount', min: 0, max: 3, step: 0.05,
-          tip: `How many strokes in the ${layer.label.toLowerCase()} layer (${d}). 1 covers the canvas about once over; 0 turns the layer off.` },
+      const layerSliders = buildSliders(section, this.settings.layers[layer.key], [
+        { key: 'amount', label: 'Amount', min: 0, max: 1, step: 0.01,
+          tip: `How much of the canvas the ${layer.label.toLowerCase()} layer (${d}) covers. 0.5 covers about half; 1 covers all of it with no gaps; 0 turns the layer off.` },
         { key: 'size', label: 'Brush size', min: r.size[0], max: r.size[1], step: 1, digits: 0,
           tip: `Typical brush radius for this layer, in pixels. Each stroke varies a little around it.` },
         { key: 'length', label: 'Stroke length', min: r.length[0], max: r.length[1], step: 5, digits: 0,
@@ -280,6 +322,7 @@ export const generatorPhase = {
         { key: 'thickness', label: 'Paint thickness', min: 0.05, max: 3, step: 0.05,
           tip: 'How thick the paint is in this layer, so how much relief it adds. Thin underpainting and thick accents is the classic build-up.' },
       ], changed);
+      this.refreshers.push(layerSliders.refresh);
     }
     return section;
   },

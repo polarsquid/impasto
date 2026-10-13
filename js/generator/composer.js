@@ -14,28 +14,43 @@
 //   body          - medium strokes, the bulk of the paint
 //   accents       - small, thick strokes that stand highest and catch light
 //
-// Within a layer, strokes are spread with a "jittered grid": divide the
-// canvas into equal cells and put one stroke start somewhere random inside
-// each cell. Pure randomness would leave clumps and bald patches; a jittered
-// grid looks random but covers the canvas evenly. The order is shuffled
-// afterwards, so strokes don't overlap in neat rows.
+// Each layer has an AMOUNT: the fraction of the canvas it covers, from 0
+// (layer off) to 1 (every bit of canvas covered, no gaps). Planning a layer
+// happens in two passes, using a coverage grid (coverage.js) to keep score:
+//
+//   1. Spread strokes evenly with a "jittered grid": divide the canvas into
+//      equal cells and start one stroke somewhere random inside each. Pure
+//      randomness would leave clumps and bald patches; a jittered grid looks
+//      random but covers evenly. The order is shuffled, so strokes overlap
+//      naturally rather than in neat rows. Stop as soon as the layer covers
+//      its target amount.
+//   2. If the target isn't reached yet (always the case near Amount 1), find
+//      the remaining bare spots and aim a stroke at each, until it is.
+//
+// The underpainting is painted from the LAST TWO colours in the palette
+// only, so it reads as a unified base tone; the other layers use them all.
 // =============================================================================
 
 import { createNoise2D } from '../../lib/simplex-noise.js';
 import { createFlowField } from './flow-field.js';
 import { createColorPicker, PALETTE_PRESETS } from './palettes.js';
+import { CoverageGrid } from './coverage.js';
 import { seededRandom, shuffle } from './random.js';
 
 /**
  * The three layers, in painting order. `loadFactor` sets how far a brush
  * travels before running dry, as a multiple of the stroke's length: thin
  * underpainting lasts a long way, thick accents run out sooner.
+ * `underColors` marks the layer that only uses the last two palette colours.
  */
 export const LAYERS = [
-  { key: 'under',   label: 'Underpainting', loadFactor: 2.0 },
-  { key: 'body',    label: 'Body paint',    loadFactor: 1.2 },
-  { key: 'accents', label: 'Accents',       loadFactor: 0.9 },
+  { key: 'under',   label: 'Underpainting', loadFactor: 2.2, underColors: true },
+  { key: 'body',    label: 'Body paint',    loadFactor: 1.6 },
+  { key: 'accents', label: 'Accents',       loadFactor: 1.3 },
 ];
+
+/** At most this many strokes per layer, so planning always stays quick. */
+const MAX_STROKES_PER_LAYER = 6000;
 
 /** Settings a fresh generator starts with. */
 export function defaultGeneratorSettings() {
@@ -47,13 +62,14 @@ export function defaultGeneratorSettings() {
       mixing: 0.3,      // chance a stroke picks up a second colour
       variation: 0.07,  // random brightness shift per stroke
     },
-    coverage: 1.0,      // scales the number of strokes in every layer
+    coverage: 1.0,      // multiplies every layer's amount
     layers: {
-      //          density = how much of the canvas the layer covers (1 = about once over)
-      //          size = brush radius px, length = stroke length px
-      under:   { density: 1.3,  size: 62, length: 420, thickness: 0.35 },
-      body:    { density: 1.3,  size: 30, length: 230, thickness: 1.0 },
-      accents: { density: 0.35, size: 14, length: 95,  thickness: 1.6 },
+      //  amount    = fraction of the canvas the layer covers (1 = all of it)
+      //  size      = brush radius px, length = stroke length px
+      //  thickness = paint thickness
+      under:   { amount: 0.9,  size: 62, length: 420, thickness: 0.35 },
+      body:    { amount: 0.8,  size: 30, length: 230, thickness: 1.0 },
+      accents: { amount: 0.3,  size: 14, length: 95,  thickness: 1.6 },
     },
   };
 }
@@ -74,20 +90,26 @@ export function composePainting(settings, character, width, height) {
   const noise2D = createNoise2D(seededRandom(settings.seed ^ 0x9e3779b9));
 
   const field = createFlowField(settings.field, width, height, noise2D);
-  const colors = createColorPicker(settings.palette);
+  const allColors = createColorPicker(settings.palette);
+  const underColors = createColorPicker(settings.palette, { lastTwo: true });
   const jobs = [];
 
   for (const layer of LAYERS) {
     const L = settings.layers[layer.key];
-    const density = L.density * settings.coverage;
-    if (density <= 0) continue;
+    const target = Math.min(1, L.amount * settings.coverage);
+    if (target <= 0) continue;
 
-    // How many strokes? Enough that their total area (width x length)
-    // covers the canvas `density` times over.
-    const strokeArea = (2 * L.size) * L.length;
-    const count = Math.min(3000, Math.round(density * width * height / strokeArea));
+    const colors = layer.underColors ? underColors : allColors;
+    // Cells about a fifth of the brush radius: fine enough to catch real
+    // gaps, coarse enough to stay fast.
+    const grid = new CoverageGrid(width, height, Math.min(10, Math.max(3, L.size / 5)));
+    // Aiming for 99.5% or more means "no gaps at all".
+    const wantComplete = target >= 0.995;
+    const done = () => (wantComplete ? grid.complete : grid.fraction >= target);
+    let count = 0;
 
-    for (const [x, y] of jitteredGrid(count, width, height, L.size, rand)) {
+    // Make one stroke starting at (x, y) and record what it covers.
+    const addStroke = (x, y, flip) => {
       const radius = L.size * (0.75 + rand() * 0.5);    // +/- 25% size
       const length = L.length * (0.6 + rand() * 0.8);   // +/- 40% length
       const brush = {
@@ -98,7 +120,40 @@ export function composePainting(settings, character, width, height) {
         seed: rand() * 1000,
         loadLength: length * layer.loadFactor,
       };
-      jobs.push({ brush, points: tracePath(x, y, length, radius, field, rand), layer: layer.key });
+      const points = tracePath(x, y, length, radius, field, flip, rand);
+      grid.stampStroke(points, brush);
+      jobs.push({ brush, points, layer: layer.key });
+      count++;
+      return radius;
+    };
+    // A field only gives a LINE direction, so a stroke may travel either way
+    // along it. Picking at random stops every stroke starting on one side.
+    const randomFlip = () => (rand() < 0.5 ? 0 : Math.PI);
+
+    // --- Pass 1: even spread --------------------------------------------------------
+    // Enough candidate start points to cover the canvas about 2.5 times over;
+    // usually we stop long before using them all.
+    const candidates = Math.ceil(2.5 * width * height / (2 * L.size * L.length));
+    for (const [x, y] of jitteredGrid(candidates, width, height, L.size, rand)) {
+      if (done() || count >= MAX_STROKES_PER_LAYER) break;
+      addStroke(x, y, randomFlip());
+    }
+
+    // --- Pass 2: fill the gaps ---------------------------------------------------------
+    // Aim a stroke at each bare spot. To put the spot in the stroke's solid
+    // middle rather than its tip, start the stroke a little way back along
+    // the flow field.
+    while (!done() && count < MAX_STROKES_PER_LAYER) {
+      const gap = grid.nextGap(rand);
+      if (!gap) break;
+      const flip = randomFlip();
+      const a = field(gap.x, gap.y) + flip;
+      const back = L.size * 1.2;
+      addStroke(gap.x - Math.cos(a) * back, gap.y - Math.sin(a) * back, flip);
+      // If the stroke curved away and still missed the spot, count the spot
+      // as covered anyway so this loop can't go on forever. (Neighbouring
+      // strokes almost always cover it in practice.)
+      grid.forceCover(gap.index);
     }
   }
   return { jobs };
@@ -131,13 +186,11 @@ function jitteredGrid(count, width, height, margin, rand) {
 
 /**
  * Walk a stroke's path through the flow field.
+ * @param {number} flip  0 to travel with the field, PI to travel against it
  * @returns {Float32Array} x0, y0, x1, y1, ... in surface pixels
  */
-function tracePath(x, y, length, radius, field, rand) {
+function tracePath(x, y, length, radius, field, flip, rand) {
   const step = Math.max(2, radius * 0.12);
-  // A field only gives a LINE direction, so a stroke may travel either way
-  // along it. Picking at random stops every stroke starting on the same side.
-  const flip = rand() < 0.5 ? 0 : Math.PI;
   let wander = 0;
   const points = [x, y];
   for (let d = 0; d < length; d += step) {

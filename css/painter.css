@@ -307,8 +307,9 @@ input[type="number"] {
 }
 
 /* --- Generator: palette slots --------------------------------------------------------
-   One row per colour: picker, amount slider, value. A colour with zero
-   weight is dimmed, since it won't be used. */
+   One row per colour: picker, amount slider, value, and a "base" tag on the
+   last two colours in use (they also paint the underpainting). A colour
+   with zero weight is dimmed, since it won't be used. */
 .palette {
   display: grid;
   gap: 0.35rem;
@@ -316,7 +317,7 @@ input[type="number"] {
 }
 .palette__slot {
   display: grid;
-  grid-template-columns: 2.25rem 1fr 2.5rem;
+  grid-template-columns: 2.25rem 1fr 2.5rem 2.25rem;
   align-items: center;
   gap: 0.6rem;
   font-size: var(--step-0);
@@ -328,6 +329,12 @@ input[type="number"] {
   font-variant-numeric: tabular-nums;
 }
 .palette__slot--off input[type="color"] { opacity: 0.35; }
+.palette__tag {
+  grid-column: 4;          /* stays in its column even when others are empty */
+  color: var(--muted);
+  font-size: 0.6875rem;    /* 11px */
+  letter-spacing: 0.02em;
+}
 
 /* --- Light pad ------------------------------------------------------------------
    The circle you drag the lamp around. Centre = overhead, rim = raking light. */

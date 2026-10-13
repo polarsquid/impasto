@@ -16,23 +16,42 @@
 import { hexToRgb, mixPigments } from '../color/pigment.js';
 import { pickWeighted } from './random.js';
 
-/** Starting points you can load and then adjust. */
+/**
+ * Starting points you can load and then adjust. The LAST TWO colours of each
+ * are its underpainting (see composer.js), so they're chosen as base tones,
+ * usually the deepest colours in the set.
+ */
 export const PALETTE_PRESETS = [
-  { name: 'Harbour',  colors: ['#1f3a68', '#2e6f73', '#c9a227', '#e8dcc0', '#9c2f2a', '#3b2f4a'] },
-  { name: 'Ember',    colors: ['#2a1a1f', '#6b1f1a', '#b8401f', '#e0892e', '#f2cf7a', '#3d3a4a'] },
-  { name: 'Moss',     colors: ['#1f2a1c', '#3e5a2f', '#7a8b3c', '#c2b56b', '#e6dcc0', '#5b4a3a'] },
-  { name: 'Nocturne', colors: ['#0f1a2e', '#1d3557', '#3d5a80', '#98c1d9', '#e0e6ed', '#c9a227'] },
-  { name: 'Coast',    colors: ['#f2efe6', '#a8c5cf', '#5a8fa6', '#2c5f7a', '#d9b88f', '#1e2d3a'] },
-  { name: 'Poppy',    colors: ['#c8331f', '#e8742c', '#f1c84b', '#3f6b3a', '#f3ead8', '#24281f'] },
+  { name: 'Harbour',  colors: ['#c9a227', '#e8dcc0', '#9c2f2a', '#2e6f73', '#1f3a68', '#3b2f4a'] },
+  { name: 'Ember',    colors: ['#f2cf7a', '#e0892e', '#b8401f', '#3d3a4a', '#6b1f1a', '#2a1a1f'] },
+  { name: 'Moss',     colors: ['#e6dcc0', '#c2b56b', '#7a8b3c', '#5b4a3a', '#3e5a2f', '#1f2a1c'] },
+  { name: 'Nocturne', colors: ['#e0e6ed', '#c9a227', '#98c1d9', '#3d5a80', '#1d3557', '#0f1a2e'] },
+  { name: 'Coast',    colors: ['#f2efe6', '#d9b88f', '#1e2d3a', '#2c5f7a', '#a8c5cf', '#5a8fa6'] },
+  { name: 'Poppy',    colors: ['#c8331f', '#e8742c', '#f1c84b', '#f3ead8', '#3f6b3a', '#24281f'] },
+  // Mostly dark: near-blacks and deep blues, with one pale steel-blue
+  // highlight so the relief still catches some light.
+  { name: 'Midnight', colors: ['#b8c7da', '#2f4466', '#1a2a46', '#0e1a30', '#0a0f1c', '#050608'] },
+  // Neutral greys from bone white to near black. Lets the relief and
+  // lighting do all the work; also a good base for the white text later.
+  { name: 'Graphite', colors: ['#f0f0ee', '#c8c8c6', '#9a9a98', '#6c6c6a', '#3e3e3d', '#1b1b1b'] },
+  // Earth pigments: yellow ochre, raw and burnt sienna, burnt umber.
+  // The classic old-master palette.
+  { name: 'Earth',    colors: ['#efe3c8', '#d6a756', '#b8743a', '#8a4a2b', '#5c3a24', '#2e211a'] },
+  // Twilight: peach and rose fading into violet.
+  { name: 'Dusk',     colors: ['#f6d6c2', '#e8a49c', '#c96f86', '#7d4e7e', '#4a3a6b', '#2b2547'] },
 ];
 
 /**
  * Prepare a palette for picking: convert hex to RGB and drop unused slots.
  * @param {Object} palette  { colors: [{ hex, weight }], mixing, variation }
+ * @param {Object} [options]
+ *   lastTwo: only use the last two colours that are switched on (weight > 0).
+ *            The underpainting uses this.
  * @returns {Object} a picker with a pick(rand) method
  */
-export function createColorPicker(palette) {
-  const slots = palette.colors.filter((c) => c.weight > 0);
+export function createColorPicker(palette, { lastTwo = false } = {}) {
+  let slots = palette.colors.filter((c) => c.weight > 0);
+  if (lastTwo) slots = slots.slice(-2);
   const colors = slots.map((c) => hexToRgb(c.hex));
   const weights = slots.map((c) => c.weight);
 

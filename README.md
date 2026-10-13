@@ -79,9 +79,9 @@ pointer / generator          StrokePath            PaintSurface               Li
 
 ```
 settings + seed ──> composer.js ──────────────> stroke-runner.js ──> surface
-                    flow field (gesture)        all at once, or a
-                    palette (weighted, mixed)   few strokes per frame
-                    3 layers, jittered grid     ("watch it paint")
+                    flow field (gesture)        all at once, or over
+                    palette (weighted, mixed)   ~4 seconds
+                    3 layers, coverage targets  ("watch it paint")
 ```
 
 `js/generator/composer.js` plans every stroke as plain data from the
@@ -89,7 +89,10 @@ settings and a seed (same seed + settings = same painting), and
 `js/generator/stroke-runner.js` paints the plan. Strokes follow a flow field
 (`flow-field.js`), get colours from a weighted palette with real pigment
 mixing (`palettes.js`, via Spectral.js), and are spread evenly with a
-jittered grid, coarse to fine.
+jittered grid, coarse to fine. Each layer's Amount is the fraction of the
+canvas it covers: `coverage.js` keeps score while planning, and at Amount 1
+the composer aims extra strokes at every remaining gap. The underpainting
+uses only the last two palette colours (marked "base" in the panel).
 
 Every file is heavily commented; start at `js/main.js` and follow the
 imports. To see how a tab is put together, read `js/phases/phase1-brush.js`
@@ -114,6 +117,7 @@ js/strokes/
   test-strokes.js          quick test composition (tab 1)
 js/generator/
   composer.js              plans a painting: layers, placement, paths
+  coverage.js              tracks how much of the canvas a layer covers
   flow-field.js            stroke direction patterns (the gesture)
   palettes.js              palette presets and per-stroke colour picking
   stroke-runner.js         paints a plan, instantly or progressively

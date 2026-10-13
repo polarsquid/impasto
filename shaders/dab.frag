@@ -89,10 +89,18 @@ void main() {
   profile *= mix(1.0 - uGroove, 1.0, b);
 
   // --- 4. Running dry -----------------------------------------------------------
-  // A full brush (load 1) covers everything. As the load drops, a rising
-  // threshold means only bristles with a high noise value "b" still deposit
-  // paint, which gives the broken, dry-brush look at the end of a long stroke.
-  float threshold = (1.0 - vLoad) * 1.05;
+  // While the brush still has plenty of paint (load above DRY_START), every
+  // bristle deposits paint and the stroke is completely solid. Below that,
+  // "dryness" rises from 0 to 1, and a rising threshold means only bristles
+  // with a high noise value "b" still deposit paint, which gives the broken,
+  // dry-brush look at the end of a long stroke.
+  //
+  // (The generator relies on strokes being solid until DRY_START, to know
+  // which parts of the canvas are fully covered: see SOLID_LOAD in
+  // js/generator/coverage.js. Keep the two numbers the same.)
+  const float DRY_START = 0.6;
+  float dryness   = clamp((DRY_START - vLoad) / DRY_START, 0.0, 1.0);
+  float threshold = dryness * 1.05;
   float coverage  = smoothstep(threshold - 0.08, threshold + 0.08, b + 0.1);
   float thickness = profile * mix(0.35, 1.0, vLoad);
 
