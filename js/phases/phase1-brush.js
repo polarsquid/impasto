@@ -15,6 +15,8 @@
 //                        'brush', 'view'
 //   init(app)          - runs once, the first time the tab is opened
 //   enter(app) / leave(app) / notify(kind) - optional hooks
+//   resize(app)        - optional: the canvas turned between portrait and
+//                        landscape; the surface is already resized (and blank)
 //   surface            - this tab's own painting
 //
 // Everything that does real work lives in the shared engine (js/renderer,
@@ -33,16 +35,25 @@ export const brushPhase = {
 
   init(app) {
     this.surface = app.createSurface();
-    paintTestComposition(this.surface, app.settings.brush, 7);
+    // Remember the seed, so a change of orientation can repaint the same
+    // composition at the new shape.
+    this.testSeed = 7;
+    paintTestComposition(this.surface, app.settings.brush, this.testSeed);
 
     const test = createSection('Test painting');
     test.appendChild(createActions(
       createButton('New test painting', () => {
         this.surface.clear();
-        paintTestComposition(this.surface, app.settings.brush, Math.floor(Math.random() * 1e6));
+        this.testSeed = Math.floor(Math.random() * 1e6);
+        paintTestComposition(this.surface, app.settings.brush, this.testSeed);
         app.requestRender();
       }, { primary: true, tip: 'Clears the canvas and paints a fresh random composition, using the current paint character.' }),
     ));
     this.sections = { test };
+  },
+
+  // Portrait <-> landscape: repaint the same test composition at the new shape.
+  resize(app) {
+    paintTestComposition(this.surface, app.settings.brush, this.testSeed);
   },
 };

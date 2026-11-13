@@ -12,8 +12,11 @@
 //
 // The phases themselves live in js/phases/. Each tab is CUMULATIVE: a later
 // phase shows everything the earlier ones did, plus its own new features,
-// all on the same shared engine. Adding phase 3 later means writing
-// js/phases/phase3-....js and adding it to the PHASES list below.
+// all on the same shared engine. Adding a phase means writing
+// js/phases/phaseN-....js and adding it to the PHASES list below.
+//
+// The canvas can be portrait or landscape (same size, turned 90 degrees).
+// Switching resizes every tab's surface and asks each tab to repaint.
 // =============================================================================
 
 import { createContext, loadShaderSources } from './renderer/gl-utils.js';
@@ -23,21 +26,28 @@ import { attachPointerBrush } from './strokes/pointer-brush.js';
 import { hexToRgb } from './color/pigment.js';
 import { buildSharedSections } from './ui/shared-sections.js';
 import { createTabs } from './ui/tabs.js';
+import { TextPainter } from './text/text-painter.js';
 import { initTooltips, resetInPlace } from './ui/controls.js';
 import { brushPhase } from './phases/phase1-brush.js';
 import { generatorPhase } from './phases/phase2-generator.js';
+import { textPhase } from './phases/phase3-text.js';
 
 // Every phase, in order. The tab bar is built from this list.
-const PHASES = [brushPhase, generatorPhase];
+const PHASES = [brushPhase, generatorPhase, textPhase];
 
-// Surface resolution in pixels. 4:5 portrait. The canvas is displayed scaled
-// to fit the window, but everything is painted at this size.
-const SURFACE_WIDTH = 1080;
-const SURFACE_HEIGHT = 1350;
+// Surface resolution in pixels, for each orientation: 4:5 portrait, or the
+// same canvas turned on its side. The canvas is displayed scaled to fit the
+// window, but everything is painted at this size.
+const SURFACE_SIZES = {
+  portrait:  { width: 1080, height: 1350 },
+  landscape: { width: 1350, height: 1080 },
+};
+const DEFAULT_ORIENTATION = 'portrait';
 
 // Every shader file the app uses (files they #include are found automatically).
 const SHADER_FILES = [
   'fullscreen.vert', 'dab.vert', 'dab.frag', 'composite.frag', 'copy.frag', 'lighting.frag',
+  'text.frag',
 ];
 
 // --- Shared settings ------------------------------------------------------------
@@ -101,8 +111,9 @@ const canvas = document.getElementById('painting');
 const statusEl = document.getElementById('status');
 
 async function start() {
-  canvas.width = SURFACE_WIDTH;
-  canvas.height = SURFACE_HEIGHT;
+  const startSize = SURFACE_SIZES[DEFAULT_ORIENTATION];
+  canvas.width = startSize.width;
+  canvas.height = startSize.height;
   const gl = createContext(canvas);
   const shaders = await loadShaderSources(SHADER_FILES);
   const lighting = new LightingPass(gl, shaders);
@@ -115,13 +126,39 @@ async function start() {
 
   const app = {
     settings,
-    width: SURFACE_WIDTH,
-    height: SURFACE_HEIGHT,
+    orientation: DEFAULT_ORIENTATION,   // 'portrait' or 'landscape'
+    width: startSize.width,             // current surface size in pixels
+    height: startSize.height,
     orbiting: false,     // set by the "Orbit the light" checkbox
     lightPad: null,      // set when the light section is built
 
     /** A new, blank painting surface (each tab makes its own). */
-    createSurface: () => new PaintSurface(gl, shaders, SURFACE_WIDTH, SURFACE_HEIGHT),
+    createSurface: () => new PaintSurface(gl, shaders, app.width, app.height),
+
+    /** Something that paints knife lettering onto a surface (phase 3). */
+    createTextPainter: () => new TextPainter(gl, shaders),
+
+    /**
+     * Turn the canvas between 'portrait' and 'landscape'. Every tab that's
+     * been opened gets its surface resized (which wipes it) and is asked to
+     * repaint itself at the new shape with its resize() hook. Tabs not yet
+     * opened simply start at the new size when they are.
+     */
+    setOrientation(name) {
+      if (name === app.orientation || !SURFACE_SIZES[name]) return;
+      app.orientation = name;
+      ({ width: app.width, height: app.height } = SURFACE_SIZES[name]);
+      // Changing a canvas's size also clears it; the render below redraws it.
+      canvas.width = app.width;
+      canvas.height = app.height;
+      for (const phase of PHASES) {
+        if (!phase.initialized) continue;
+        phase.surface.resize(app.width, app.height);
+        phase.resize?.(app);
+      }
+      refreshShared();
+      needsRender = true;
+    },
 
     /** Ask for the screen to be redrawn on the next frame. */
     requestRender: () => { needsRender = true; },
@@ -138,6 +175,7 @@ async function start() {
      * repaints with them).
      */
     resetAllSettings() {
+      app.setOrientation(DEFAULT_ORIENTATION);
       resetInPlace(settings.light, defaultLight());
       resetInPlace(settings.brush, defaultBrush());
       app.orbiting = false;
@@ -156,7 +194,7 @@ async function start() {
     savePng() {
       // Draw a fresh frame first. The canvas keeps its image afterwards
       // (preserveDrawingBuffer), so we can turn it straight into a file.
-      lighting.render(activePhase.surface.display, SURFACE_WIDTH, SURFACE_HEIGHT, settings.light);
+      lighting.render(activePhase.surface.display, app.width, app.height, settings.light);
       canvas.toBlob((blob) => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -219,7 +257,7 @@ async function start() {
       needsRender = true;
     }
     if (needsRender && activePhase) {
-      lighting.render(activePhase.surface.display, SURFACE_WIDTH, SURFACE_HEIGHT, settings.light);
+      lighting.render(activePhase.surface.display, app.width, app.height, settings.light);
       needsRender = false;
     }
     requestAnimationFrame(frame);

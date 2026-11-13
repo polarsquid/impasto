@@ -61,7 +61,8 @@ html, body {
   line-height: 0;   /* removes the gap under inline elements like <canvas> */
 }
 
-/* The canvas keeps its 4:5 shape and scales down to fit the wall.
+/* The canvas keeps its shape (4:5 portrait or 5:4 landscape) and scales
+   down to fit the wall.
    It's a "replaced element" with an intrinsic size (set in JS), so
    width/height auto plus max-width/max-height preserves the ratio. */
 #painting {
@@ -304,6 +305,52 @@ input[type="number"] {
   border: 1px solid var(--line);
   border-radius: 3px;
   padding: 0.3rem 0.5rem;
+}
+
+/* --- Canvas orientation: a two-button "segmented" switch ---------------------------
+   Two buttons joined into one pill; the chosen one (aria-pressed="true")
+   is filled in linen, like a primary button. */
+.control--orientation { align-items: center; }
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;    /* clips the buttons' corners to the rounded outline */
+}
+.segmented__option {
+  font: inherit;
+  font-size: var(--step-0);
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+.segmented__option + .segmented__option { border-left: 1px solid var(--line); }
+.segmented__option:hover { color: var(--ink); }
+.segmented__option[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--panel);
+}
+
+/* --- Text tab: the message box -------------------------------------------------------
+   A plain multi-line box, set in capitals since the lettering font only
+   has capitals anyway (what you see is what gets painted). */
+.control--message { grid-template-columns: 1fr; }
+textarea {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+  font: inherit;
+  font-size: var(--step-1);
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  background: var(--wall);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.45rem 0.55rem;
 }
 
 /* --- Generator: palette slots --------------------------------------------------------

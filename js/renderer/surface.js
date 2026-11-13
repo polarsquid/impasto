@@ -11,6 +11,9 @@
 //   front  - the painting as it stands, as TWO textures:
 //              paint:  rgb = paint colour, a = coverage (0 = bare canvas)
 //              height: r = paint thickness
+//                      g = gloss, 0..1: 0 is ordinary brushed oil paint,
+//                          1 is the smoother, shinier top that a palette
+//                          knife leaves (the text, phase 3)
 //            The canvas colour isn't stored at all; the lighting pass mixes
 //            it in, so it can be changed without repainting.
 //   back   - a copy of front, plus the stroke in progress. This is what's
@@ -33,6 +36,13 @@
 // dabs WITHIN one stroke merge smoothly (MAX blending), while separate strokes
 // still pile up on top of each other (composite adds their heights).
 //
+// Besides strokes, a surface can also run a whole-area "pass" (applyPass):
+// a shader that reads front and writes back over a rectangle, then copies
+// it into front. The knife lettering (phase 3) is painted that way. And it
+// can keep a SNAPSHOT of itself (saveSnapshot / restoreSnapshot), so the
+// lettering can be repainted over the same background again and again
+// without regenerating the background.
+//
 // SPEED: every step above is limited to the stroke's bounding box using the
 // scissor test. A typical stroke covers a few percent of the canvas, so this
 // makes painting hundreds of strokes (the generator) many times faster than
@@ -51,15 +61,7 @@ export class PaintSurface {
    */
   constructor(gl, shaders, width, height) {
     this.gl = gl;
-    this.width = width;
-    this.height = height;
-
-    // Surface targets have two textures: [0] paint (RGBA), [1] height. Height
-    // only needs one channel, so it uses R16F (one half-float per pixel).
-    const surfaceLayout = { attachments: [{}, { internalFormat: gl.R16F, format: gl.RED }] };
-    this.front  = createRenderTarget(gl, width, height, surfaceLayout);
-    this.back   = createRenderTarget(gl, width, height, surfaceLayout);
-    this.stroke = createRenderTarget(gl, width, height);
+    this.#createTargets(width, height);
 
     this.dabProgram = new Program(gl, shaders['dab.vert'], shaders['dab.frag'], 'dab');
     this.compositeProgram = new Program(gl, shaders['fullscreen.vert'], shaders['composite.frag'], 'composite');
@@ -96,11 +98,102 @@ export class PaintSurface {
     this.clear();
   }
 
+  /**
+   * Make the textures for a given size. Surface targets have two textures:
+   * [0] paint (RGBA) and [1] height + gloss, which needs only two channels,
+   * so it uses RG16F (two half-floats per pixel).
+   */
+  #createTargets(width, height) {
+    const gl = this.gl;
+    this.width = width;
+    this.height = height;
+    const surfaceLayout = { attachments: [{}, { internalFormat: gl.RG16F, format: gl.RG }] };
+    this.front  = createRenderTarget(gl, width, height, surfaceLayout);
+    this.back   = createRenderTarget(gl, width, height, surfaceLayout);
+    this.stroke = createRenderTarget(gl, width, height);
+    this.snapshot = null;       // made the first time saveSnapshot() is called
+  }
+
+  /** Free a render target's GPU memory (its textures and framebuffer). */
+  #deleteTarget(target) {
+    if (!target) return;
+    target.textures.forEach((t) => this.gl.deleteTexture(t));
+    this.gl.deleteFramebuffer(target.framebuffer);
+  }
+
+  /**
+   * Change the surface's size (portrait <-> landscape). The painting is
+   * lost: the textures are thrown away and new blank ones made. Whoever
+   * owns the surface repaints it afterwards.
+   */
+  resize(width, height) {
+    if (width === this.width && height === this.height) return;
+    [this.front, this.back, this.stroke, this.snapshot].forEach((t) => this.#deleteTarget(t));
+    this.#createTargets(width, height);
+    this.strokeActive = false;
+    this.clear();
+  }
+
+  /**
+   * Remember the painting as it is now, so restoreSnapshot() can bring it
+   * back later. Phase 3 takes one when the background is finished, and
+   * restores it before every repaint of the lettering.
+   */
+  saveSnapshot() {
+    if (!this.snapshot) {
+      this.snapshot = createRenderTarget(this.gl, this.width, this.height,
+        { attachments: [{}, { internalFormat: this.gl.RG16F, format: this.gl.RG }] });
+    }
+    this.#copy(this.front, this.snapshot, null);
+  }
+
+  /** True if there's a snapshot to go back to. */
+  get hasSnapshot() { return this.snapshot !== null; }
+
+  /** Put the painting back exactly as it was at the last saveSnapshot(). */
+  restoreSnapshot() {
+    if (!this.snapshot) return;
+    // Both front and back, to keep the rule that they're identical between strokes.
+    this.#copy(this.snapshot, this.front, null);
+    this.#copy(this.snapshot, this.back, null);
+  }
+
+  /**
+   * Run a shader over a rectangle of the painting: it reads the painting
+   * (front) and writes the new version (into back), which is then copied
+   * into front, so the change becomes permanent. Used for effects that work
+   * on a whole area at once rather than dab by dab, like the knife lettering.
+   *
+   * The program must read the painting from samplers named uPaint (texture
+   * unit 0) and uHeight (unit 1), and write two outputs like composite.frag.
+   *
+   * @param {Program} program
+   * @param {{x0, y0, x1, y1}} box  surface pixels, y down
+   * @param {Function} setUniforms  called with the program to set its own
+   *   uniforms (use texture units 2 and up for any extra textures)
+   */
+  applyPass(program, box, setUniforms) {
+    const gl = this.gl;
+    bindTarget(gl, this.back);
+    setScissor(gl, box, this.height);
+    program.use()
+      .texture('uPaint', this.front.textures[0], 0)
+      .texture('uHeight', this.front.textures[1], 1);
+    setUniforms(program);
+    drawFullscreen(gl);
+    setScissor(gl, null);
+    bindTarget(gl, null);
+    this.#copy(this.back, this.front, box);
+  }
+
   /** Wipe the painting back to bare canvas: zero coverage, zero height. */
   clear() {
     clearTarget(this.gl, this.front);
     clearTarget(this.gl, this.back);
     clearTarget(this.gl, this.stroke);
+    // A snapshot is blanked too, so restoring it later gives bare canvas
+    // rather than bringing back paint that was cleared away.
+    if (this.snapshot) clearTarget(this.gl, this.snapshot);
     this.lastBox = null;
     this.strokeCount = 0;
   }
@@ -225,7 +318,10 @@ export class PaintSurface {
     bindTarget(gl, null);
   }
 
-  /** Copy a rectangle of both surface textures from one target to another. */
+  /**
+   * Copy a rectangle of both surface textures from one target to another.
+   * A box of null copies the whole surface.
+   */
   #copy(from, to, box) {
     const gl = this.gl;
     bindTarget(gl, to);

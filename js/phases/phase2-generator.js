@@ -49,7 +49,12 @@ export const generatorPhase = {
         if (done < total) this.setStatus(`Painting… ${done} of ${total} strokes`);
       },
       onFrame: () => app.requestRender(),
-      onDone: (total) => this.setStatus(`${total} strokes painted`),
+      onDone: (total) => {
+        this.setStatus(`${total} strokes painted`);
+        // A hook for tabs built on this one: phase 3 paints its lettering
+        // as soon as the background is finished.
+        this.backgroundDone?.();
+      },
     });
 
     this.sections = {
@@ -64,6 +69,17 @@ export const generatorPhase = {
   // Pause a "watch it paint" run while the tab is hidden; carry on after.
   enter() { this.runner.resume(); },
   leave() { this.runner.pause(); },
+
+  // The canvas changed between portrait and landscape: main.js has already
+  // resized the surface (which wiped it), so paint the background again.
+  // Always instantly, even with "watch it paint" on: this tab may not be
+  // the one showing, and a hidden tab shouldn't be animating.
+  resize() {
+    const watch = this.watch;
+    this.watch = false;
+    this.repaint();
+    this.watch = watch;
+  },
 
   // Shared settings changed. Paint character affects generated strokes.
   notify(kind) {

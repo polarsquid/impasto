@@ -27,7 +27,7 @@ precision highp float;
 in vec2 vUv;
 
 uniform sampler2D uPaint;     // rgb = paint colour (sRGB), a = coverage 0..1
-uniform sampler2D uHeight;    // r = paint height
+uniform sampler2D uHeight;    // r = paint height, g = gloss (1 = smooth knife paint)
 uniform vec3  uGround;        // canvas colour under the paint (sRGB)
 uniform vec2  uSurfaceSize;   // surface size in pixels
 uniform vec2  uTexel;         // size of one pixel in uv units = 1 / size
@@ -106,7 +106,9 @@ vec3 toSrgb(vec3 c)   { return pow(c, vec3(1.0 / 2.2)); }
 
 void main() {
   vec4  paint       = texture(uPaint, vUv);
-  float paintHeight = texture(uHeight, vUv).r;
+  vec2  heightGloss = texture(uHeight, vUv).rg;
+  float paintHeight = heightGloss.r;
+  float gloss       = heightGloss.g;
   float h = heightAt(vUv);
 
   // What colour is this spot? Paint over canvas, by coverage. Because the
@@ -142,10 +144,13 @@ void main() {
   // The "half vector" sits halfway between light and view. The closer the
   // normal is to it, the stronger the reflection.
   vec3 halfVec = normalize(uLightDir + vec3(0.0, 0.0, 1.0));
-  float spec = pow(max(dot(normal, halfVec), 0.0), uShininess);
+  // Palette-knife paint (gloss 1) has a smoother, shinier top than brushed
+  // paint: its highlights are tighter (higher exponent) and brighter.
+  float shininess = uShininess * mix(1.0, 2.5, gloss);
+  float spec = pow(max(dot(normal, halfVec), 0.0), shininess);
   // Oil paint is glossy; bare canvas is matte.
   float paintiness = smoothstep(0.02, 0.2, paintHeight);
-  spec *= uSpecular * mix(0.05, 1.0, paintiness);
+  spec *= uSpecular * mix(0.05, 1.0, paintiness) * (1.0 + 0.9 * gloss);
 
   // --- 4. Cast shadows --------------------------------------------------------------
   float shadow = mix(1.0, castShadow(vUv, h * uDepth), uShadow);

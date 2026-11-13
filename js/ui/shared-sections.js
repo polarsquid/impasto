@@ -10,6 +10,8 @@
 // The settings they edit live in app.settings (see main.js). When something
 // changes they call app.notify(kind) with one of:
 //   'light' | 'canvas' | 'character' | 'brush' | 'view'
+// (Orientation is the exception: it calls app.setOrientation(), which
+// resizes and repaints every tab itself.)
 // so the active phase can react (the generator repaints on 'character').
 //
 // Each section also registers a refresh function in `refreshers`. Calling
@@ -101,6 +103,31 @@ function buildLightSection(app, light, refreshers) {
 function buildCanvasSection(app, light, refreshers) {
   const section = createSection('Canvas');
   const changed = () => app.notify('canvas');
+
+  // Orientation: two joined buttons, Portrait | Landscape. aria-pressed
+  // marks the chosen one, for the styling and for screen readers.
+  const orientRow = document.createElement('div');
+  orientRow.className = 'control control--orientation';
+  orientRow.dataset.tip = 'Turns the canvas upright (portrait, 1080 × 1350) or on its side (landscape, 1350 × 1080). Every tab repaints at the new shape, which clears hand-painted touch-ups.';
+  orientRow.innerHTML = `
+    <span class="control__label" id="orientation-label">Orientation</span>
+    <div class="segmented" role="group" aria-labelledby="orientation-label">
+      <button type="button" class="segmented__option" data-value="portrait">Portrait</button>
+      <button type="button" class="segmented__option" data-value="landscape">Landscape</button>
+    </div>`;
+  const orientButtons = [...orientRow.querySelectorAll('button')];
+  const showOrientation = () => {
+    for (const b of orientButtons) b.setAttribute('aria-pressed', String(b.dataset.value === app.orientation));
+  };
+  for (const b of orientButtons) {
+    b.addEventListener('click', () => {
+      app.setOrientation(b.dataset.value);   // resizes and repaints every tab
+      showOrientation();
+    });
+  }
+  showOrientation();
+  section.appendChild(orientRow);
+  refreshers.push(showOrientation);
 
   // Swatch buttons plus a custom colour picker. aria-pressed marks the
   // chosen swatch, for both the styling and screen readers.
@@ -236,11 +263,11 @@ function buildViewSection(app, light, refreshers) {
     createButton('Clear canvas', () => app.clearPainting(),
       { tip: "Removes all the paint from this tab's painting, leaving bare canvas." }),
     createButton('Save PNG', () => app.savePng(),
-      { tip: 'Downloads the painting exactly as shown, at full resolution (1080 × 1350).' }),
+      { tip: 'Downloads the painting exactly as shown, at full resolution (1080 × 1350, or 1350 × 1080 in landscape).' }),
     createButton('Reset all settings', () => {
       // A quick "are you sure?", since it can't be undone.
       if (window.confirm('Reset every setting in every tab to its starting value?')) app.resetAllSettings();
-    }, { tip: 'Puts every setting in every tab back to its starting value, after asking to confirm. The generator repaints with the default settings; the test painting stays as it is.' }),
+    }, { tip: 'Puts every setting in every tab back to its starting value (portrait included), after asking to confirm. The generator and text tabs repaint with the default settings; the test painting stays as it is unless the canvas turns back to portrait.' }),
   ));
   return section;
 }

@@ -17,6 +17,7 @@ precision highp float;
 //   paint  (output 0)  rgb = paint colour (sRGB, as you'd pick it)
 //                      a   = coverage: how much paint hides the canvas, 0..1
 //   height (output 1)  r   = paint thickness of all the paint stacked here
+//                      g   = gloss, 0..1 (1 = smooth palette-knife paint)
 //
 // The canvas (ground) colour is deliberately NOT stored here. The lighting
 // shader mixes it in using the coverage, so it can be changed at any time
@@ -30,7 +31,7 @@ precision highp float;
 in vec2 vUv;
 
 uniform sampler2D uPaint;    // surface so far: colour + coverage
-uniform sampler2D uHeight;   // surface so far: thickness
+uniform sampler2D uHeight;   // surface so far: r = thickness, g = gloss
 uniform sampler2D uStroke;   // the current stroke: r = thickness, g = coverage
 uniform vec3  uColor;        // the brush's paint colour
 uniform float uFlatten;      // how much the brush squashes paint underneath it
@@ -43,7 +44,9 @@ layout(location = 1) out vec4 outHeight;
 
 void main() {
   vec4  old       = texture(uPaint, vUv);
-  float oldHeight = texture(uHeight, vUv).r;
+  vec2  oldHG     = texture(uHeight, vUv).rg;
+  float oldHeight = oldHG.r;
+  float oldGloss  = oldHG.g;
   vec2  stroke    = texture(uStroke, vUv).rg;
   float thickness = stroke.r;
   float coverage  = stroke.g;
@@ -84,6 +87,11 @@ void main() {
   // its own paint sits on top.
   float height = oldHeight * (1.0 - coverage * uFlatten) + thickness;
 
+  // --- Gloss ----------------------------------------------------------------------
+  // Brushed paint has ordinary gloss (0). Where a brush stroke covers knife
+  // paint, its smooth shine is covered up by the same amount.
+  float gloss = oldGloss * (1.0 - coverage);
+
   outPaint  = vec4(color, newCoverage);
-  outHeight = vec4(height, 0.0, 0.0, 1.0);
+  outHeight = vec4(height, gloss, 0.0, 1.0);
 }
