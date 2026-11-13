@@ -36,7 +36,7 @@ snapshots of past versions, use git tags (`git tag phase-2`).
 | --- | --- |
 | 1 Brush and light | Lit height field, hand brush, light pad, canvas colour |
 | 2 Generator | Procedural backgrounds: flow fields, weighted palettes, three layers, seeds, pigment mixing |
-| 3 Text | Your message in white palette-knife impasto (XBAND Rough) over the generated background |
+| 3 Text | Your message in white palette-knife impasto (XBAND Rough or Open Sans ExtraBold) over the generated background |
 
 The canvas can be **portrait** (1080 × 1350) or **landscape** (1350 × 1080),
 set in the shared Canvas section. Switching repaints every tab at the new
@@ -167,7 +167,8 @@ js/ui/
 shaders/                   GLSL shader programs
 shaders/lib/spectral.glsl  GLSL port of Spectral.js (generated)
 lib/                       vendored libraries + their licences
-fonts/                     XBAND_Rough.ttf (the lettering font)
+fonts/                     lettering fonts: XBAND_Rough.ttf, OpenSans-ExtraBold.ttf
+                           (Open Sans licence is in lib/LICENSES/)
 presets/                   saved background presets (from phase 4)
 ```
 
@@ -191,3 +192,5 @@ presets/                   saved background presets (from phase 4)
 - Noise: [simplex-noise](https://github.com/jwagner/simplex-noise.js)
   v4.0.3 by Jonas Wagner, MIT licence.
 - Font: XBAND Rough, kept in this private repo for personal use only.
+- Font: [Open Sans](https://github.com/googlefonts/opensans) ExtraBold by
+  the Open Sans Project Authors, SIL Open Font Licence 1.1.
