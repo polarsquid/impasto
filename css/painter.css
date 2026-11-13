@@ -334,8 +334,8 @@ input[type="number"] {
 }
 
 /* --- Text tab: the message box -------------------------------------------------------
-   A plain multi-line box, set in capitals since the lettering font only
-   has capitals anyway (what you see is what gets painted). */
+   A plain multi-line box. While "All capitals" is on it shows the text in
+   capitals too (.textarea--caps), so what you see is what gets painted. */
 .control--message { grid-template-columns: 1fr; }
 textarea {
   width: 100%;
@@ -344,7 +344,6 @@ textarea {
   font: inherit;
   font-size: var(--step-1);
   line-height: 1.4;
-  text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--ink);
   background: var(--wall);
@@ -352,6 +351,7 @@ textarea {
   border-radius: 3px;
   padding: 0.45rem 0.55rem;
 }
+.textarea--caps { text-transform: uppercase; }
 
 /* --- Generator: palette slots --------------------------------------------------------
    One row per colour: picker, amount slider, value, and a "base" tag on the
