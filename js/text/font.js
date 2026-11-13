@@ -1,19 +1,39 @@
 // =============================================================================
 // font.js
 // -----------------------------------------------------------------------------
-// Loads the lettering font (XBAND Rough) with opentype.js, which reads the
-// .ttf file and can hand us every letter's OUTLINE: the curves and lines
-// that trace its edge. We need outlines rather than just "drawing text",
-// because the knife paint is built from the exact shape of each letter.
+// Loads the lettering fonts with opentype.js, which reads a .ttf file and
+// can hand us every letter's OUTLINE: the curves and lines that trace its
+// edge. We need outlines rather than just "drawing text", because the knife
+// paint is built from the exact shape of each letter.
 //
-// The font is loaded once and shared: loadFont() returns the same promise
+// Two fonts to choose from (LETTERING_FONTS):
+//   XBAND Rough          - the stencil-like typewriter capitals (capitals only:
+//                          typed lowercase comes out as capitals anyway)
+//   Open Sans ExtraBold  - a plain, heavy sans-serif with real lowercase
+//                          (SIL Open Font Licence, see lib/LICENSES/)
+//
+// Each font is loaded once and shared: loadFont() returns the same promise
 // every time it's called with the same address.
 // =============================================================================
 
 import { parse } from '../../lib/opentype.mjs';
 
-/** Where the lettering font lives, relative to index.html. */
-export const LETTERING_FONT_URL = 'fonts/XBAND_Rough.ttf';
+/**
+ * The fonts the Text tab offers. `value` is what's stored in the text
+ * settings; `url` is where the file lives, relative to index.html.
+ */
+export const LETTERING_FONTS = [
+  { value: 'xband',    label: 'XBAND Rough',         url: 'fonts/XBAND_Rough.ttf' },
+  { value: 'opensans', label: 'Open Sans ExtraBold', url: 'fonts/OpenSans-ExtraBold.ttf' },
+];
+
+/** The lettering font used when none (or an unknown one) is chosen. */
+export const LETTERING_FONT_URL = LETTERING_FONTS[0].url;
+
+/** The file address for a font's `value` (falls back to the first font). */
+export function fontUrl(value) {
+  return (LETTERING_FONTS.find((f) => f.value === value) ?? LETTERING_FONTS[0]).url;
+}
 
 const cache = new Map();
 
