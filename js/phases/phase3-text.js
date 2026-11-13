@@ -3,9 +3,9 @@
 // -----------------------------------------------------------------------------
 // Everything from phase 2 (the generated background, touch-ups, light and
 // canvas) plus a short message painted over it in thick white palette-knife
-// lettering, in XBAND Rough:
+// lettering, in XBAND Rough or Open Sans ExtraBold:
 //
-//   Message     - the words, their size, vertical position and jitter
+//   Message     - font, the words, capitals, size, vertical position, jitter
 //   Knife paint - how rough the edges are, how tall the paint stands,
 //                 knife marks, and how much background colour is picked up
 //
@@ -27,8 +27,10 @@
 
 import { generatorPhase } from './phase2-generator.js';
 import { defaultTextSettings } from '../text/layout.js';
-import { loadFont } from '../text/font.js';
-import { createSection, buildSliders, resetInPlace } from '../ui/controls.js';
+import { loadFont, fontUrl, LETTERING_FONTS } from '../text/font.js';
+import {
+  createSection, buildSliders, createSelect, createCheckbox, resetInPlace,
+} from '../ui/controls.js';
 
 /** Wait this long after the last keystroke before repainting the lettering. */
 const TYPING_DELAY = 400;
@@ -52,7 +54,7 @@ export const textPhase = {
     this.text = defaultTextSettings();
     this.textPainter = app.createTextPainter();
     this.textTimer = null;
-    this.font = null;
+    this.fonts = new Map();   // fonts loaded so far, by their `value`
 
     // Everything phase 2 sets up: settings, surface, runner, its four
     // sections, and the first background.
@@ -61,11 +63,20 @@ export const textPhase = {
     this.sections.message = this.buildMessageSection();
     this.sections.knife = this.buildKnifeSection();
 
-    // The font arrives a moment later (it's a file to download); paint the
-    // lettering as soon as it does.
-    loadFont().then((font) => {
-      this.font = font;
-      this.paintText();
+    // Start loading the chosen font; the lettering is painted when it arrives.
+    this.requestFont(this.text.font);
+  },
+
+  /**
+   * Make sure a font is loaded. Fonts are files to download, so the first
+   * time one is chosen it arrives a moment later; then the lettering is
+   * painted (if that font is still the chosen one). After that it's instant.
+   */
+  requestFont(value) {
+    if (this.fonts.has(value)) return;
+    loadFont(fontUrl(value)).then((font) => {
+      this.fonts.set(value, font);
+      if (this.text.font === value) this.paintText();
     }).catch((error) => {
       console.error(error);
       this.linesEl.textContent = `Couldn't load the lettering font: ${error.message}`;
@@ -82,6 +93,7 @@ export const textPhase = {
   // reset (which repaints, then calls backgroundDone) letters the defaults.
   reset(app) {
     resetInPlace(this.text, defaultTextSettings());
+    this.requestFont(this.text.font);
     generatorPhase.reset.call(this, app);
   },
 
@@ -90,11 +102,13 @@ export const textPhase = {
   /** Go back to the bare background and letter it with the current settings. */
   paintText() {
     clearTimeout(this.textTimer);
-    // Not yet: no font, or the background is still being painted (it'll
-    // call backgroundDone when it's finished), or there's no background.
-    if (!this.font || this.runner.running || !this.surface.hasSnapshot) return;
+    // Not yet: the font is still loading (requestFont calls back here when
+    // it arrives), or the background is still being painted (it calls
+    // backgroundDone when it's finished), or there's no background.
+    const font = this.fonts.get(this.text.font);
+    if (!font || this.runner.running || !this.surface.hasSnapshot) return;
     this.surface.restoreSnapshot();
-    const { lines } = this.textPainter.paint(this.surface, this.font, this.text, this.settings.seed);
+    const { lines } = this.textPainter.paint(this.surface, font, this.text, this.settings.seed);
     this.linesEl.textContent = lines.length
       ? `Lines: ${lines.join(' / ')}`
       : 'Type a message to paint it.';
@@ -116,6 +130,13 @@ export const textPhase = {
     const typed = () => this.scheduleText(TYPING_DELAY);
     const moved = () => this.scheduleText(SLIDER_DELAY);
 
+    const fontPicker = createSelect('Font', LETTERING_FONTS, this.text.font, (value) => {
+      this.text.font = value;
+      this.requestFont(value);   // paints when it arrives, if it's new
+      this.paintText();          // paints now, if it's already loaded
+    }, 'The lettering typeface. XBAND Rough is rough typewriter capitals; Open Sans ExtraBold is a clean, heavy sans-serif with lowercase letters too.');
+    section.appendChild(fontPicker.row);
+
     const row = document.createElement('div');
     row.className = 'control control--message';
     row.dataset.tip = 'The words to paint. Short messages work best, a few words over one to three lines. The lettering repaints a moment after you stop typing.';
@@ -125,6 +146,16 @@ export const textPhase = {
     box.value = this.text.text;
     box.addEventListener('input', () => { this.text.text = box.value; typed(); });
     section.appendChild(row);
+
+    // All capitals: the box shows capitals too while it's on (CSS class).
+    const showCaps = () => box.classList.toggle('textarea--caps', this.text.allCaps);
+    const caps = createCheckbox('All capitals', this.text.allCaps, (on) => {
+      this.text.allCaps = on;
+      showCaps();
+      this.paintText();
+    }, 'Paints the message in capitals, whatever case you typed it in. Turn it off to keep lowercase letters (XBAND Rough only has capitals, so this only changes Open Sans).');
+    section.appendChild(caps.row);
+    showCaps();
 
     const sliders = buildSliders(section, this.text, [
       { key: 'size', label: 'Size', min: 0.3, max: 1, step: 0.01,
@@ -142,7 +173,10 @@ export const textPhase = {
     section.appendChild(this.linesEl);
 
     this.refreshers.push(() => {
+      fontPicker.select.value = this.text.font;
       box.value = this.text.text;
+      caps.input.checked = this.text.allCaps;
+      showCaps();
       sliders.refresh();
     });
     return section;
