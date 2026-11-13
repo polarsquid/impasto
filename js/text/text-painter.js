@@ -76,8 +76,9 @@ export class TextPainter {
 
   /** Redo the layout and field if anything they depend on has changed. */
   #prepare(surface, font, settings, seed) {
-    const key = JSON.stringify([settings.text, settings.size, settings.position, settings.jitter,
-      seed, surface.width, surface.height]);
+    // settings.font names the font, so switching fonts changes the key too.
+    const key = JSON.stringify([settings.text, settings.font, settings.allCaps, settings.size,
+      settings.position, settings.jitter, seed, surface.width, surface.height]);
     if (key === this.cacheKey) return;
     this.cacheKey = key;
 
