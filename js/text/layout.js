@@ -56,13 +56,15 @@ const EVENNESS_WEIGHT = 2;
 export function defaultTextSettings() {
   return {
     text: "YOU WOULDN'T STEAL A CAR",
+    font: 'xband',    // which lettering font (see LETTERING_FONTS in font.js)
+    allCaps: true,    // paint everything in capitals, whatever was typed
     size: 0.9,        // fraction of the biggest size that fits (1 = fill the space)
     position: 0.5,    // vertical position: 0 = top, 0.5 = centre, 1 = bottom
     jitter: 0.35,     // per-letter rotation and baseline shift, 0..1
-    roughness: 0.5,   // how ragged the letter edges are, 0..1
-    height: 2.4,      // how tall the knife paint stands, in paint units
-    knife: 0.5,       // strength of knife marks: plateau steps, scrapes, skips
-    contamination: 0.3, // how much background colour the knife picks up
+    roughness: 0.25,  // how ragged the letter edges are, 0..1
+    height: 1.15,     // how tall the knife paint stands, in paint units
+    knife: 0.15,      // strength of knife marks: plateau steps, scrapes, skips
+    contamination: 0.15, // how much background colour the knife picks up
   };
 }
 
@@ -71,7 +73,7 @@ export function defaultTextSettings() {
  * @param {Object} font    an opentype.js Font with capHeight (see font.js)
  * @param {string} text    the message; line breaks are kept
  * @param {number} width, height  surface size in pixels
- * @param {Object} s       text settings (size, position, jitter)
+ * @param {Object} s       text settings (allCaps, size, position, jitter)
  * @param {Function} rand  seeded random number generator (random.js)
  * @returns {{ letters: Array, lines: string[], fontSize: number, capPx: number,
  *             box: {x0, y0, x1, y1} | null }}
@@ -82,7 +84,9 @@ export function defaultTextSettings() {
  */
 export function layoutText(font, text, width, height, s, rand) {
   const empty = { letters: [], lines: [], fontSize: 0, capPx: 0, box: null };
-  const lines = chooseLines(font, text, width, height);
+  // All caps: turn the message into capitals before anything is measured.
+  const shown = s.allCaps ? (text ?? '').toUpperCase() : text;
+  const lines = chooseLines(font, shown, width, height);
   if (!lines) return empty;
 
   const margin = MARGIN * Math.min(width, height);
