@@ -1,0 +1,76 @@
+{
+  "format": "impasto-background",
+  "version": 1,
+  "name": "Graphite turbulence",
+  "generator": {
+    "seed": 7777,
+    "field": {
+      "type": "turbulent",
+      "angle": -20,
+      "scale": 300,
+      "chaos": 0.6,
+      "centerX": 0.5,
+      "centerY": 0.5
+    },
+    "palette": {
+      "colors": [
+        {
+          "hex": "#f0f0ee",
+          "weight": 1
+        },
+        {
+          "hex": "#c8c8c6",
+          "weight": 1
+        },
+        {
+          "hex": "#9a9a98",
+          "weight": 1
+        },
+        {
+          "hex": "#6c6c6a",
+          "weight": 1
+        },
+        {
+          "hex": "#3e3e3d",
+          "weight": 1
+        },
+        {
+          "hex": "#1b1b1b",
+          "weight": 1
+        }
+      ],
+      "mixing": 0.3,
+      "variation": 0.07
+    },
+    "coverage": 1,
+    "layers": {
+      "under": {
+        "amount": 0.9,
+        "size": 62,
+        "length": 420,
+        "thickness": 0.35
+      },
+      "body": {
+        "amount": 0.8,
+        "size": 30,
+        "length": 230,
+        "thickness": 1
+      },
+      "accents": {
+        "amount": 0.2,
+        "size": 14,
+        "length": 95,
+        "thickness": 1.6
+      }
+    }
+  },
+  "character": {
+    "tipShape": 2.2,
+    "edgeWobble": 0.5,
+    "bristles": 14,
+    "groove": 0.45,
+    "ridge": 0.35,
+    "flatten": 0.55,
+    "pickup": 0.35
+  }
+}

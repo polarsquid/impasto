@@ -120,7 +120,18 @@ up where the knife touched down. It writes into the same surface textures
 as the brushes, so the letters are lit and shadowed like everything else.
 
 The background is snapshotted when it's finished, so changing the text
-only repaints the lettering, never the background.
+only repaints the lettering, never the background. Before the letters go
+on, `shaders/calm.frag` quietens the background in a soft band around the
+text (the **safe zone**): flatter paint, softer contrast, slightly darker,
+set by the "Calm behind text" slider.
+
+### Background presets (phase 4)
+
+The Generator and Text tabs can save the background (seed, generator
+settings and paint character) as a `.json` file, load one back, or pick one
+from the Built-in list (`presets/index.json`). See `presets/README.md`.
+Loading is forgiving: `js/generator/presets.js` keeps only values it
+recognises and fills in defaults for anything missing.
 
 Every file is heavily commented; start at `js/main.js` and follow the
 imports. To see how a tab is put together, read `js/phases/phase1-brush.js`
@@ -152,6 +163,7 @@ js/generator/
   palettes.js              palette presets and per-stroke colour picking
   stroke-runner.js         paints a plan, instantly or progressively
   random.js                seeded random numbers
+  presets.js               background presets: make, check and load
 js/text/
   font.js                  loads the lettering font (opentype.js)
   layout.js                line breaks, fitting, letter placement
@@ -169,7 +181,7 @@ shaders/lib/spectral.glsl  GLSL port of Spectral.js (generated)
 lib/                       vendored libraries + their licences
 fonts/                     lettering fonts: XBAND_Rough.ttf, OpenSans-ExtraBold.ttf
                            (Open Sans licence is in lib/LICENSES/)
-presets/                   saved background presets (from phase 4)
+presets/                   background presets (.json) + index.json + README
 ```
 
 ## Roadmap
@@ -179,8 +191,8 @@ presets/                   saved background presets (from phase 4)
       coarse-to-fine strokes, Spectral.js pigment mixing), tabs
 - [x] **Phase 3:** palette-knife text: font outlines -> signed distance
       field -> raised white lettering; portrait or landscape canvas
-- [ ] **Phase 4:** art-direction controls, text safe zone, presets,
-      touch-up brush
+- [x] **Phase 4:** text safe zone, background presets, slower tooltips
+- [ ] **Phase 4.1:** art-direction polish, touch-up brush refinements
 
 ## Credits
 

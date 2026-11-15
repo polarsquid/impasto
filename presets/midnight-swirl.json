@@ -1,0 +1,76 @@
+{
+  "format": "impasto-background",
+  "version": 1,
+  "name": "Midnight swirl",
+  "generator": {
+    "seed": 4821,
+    "field": {
+      "type": "swirl",
+      "angle": -20,
+      "scale": 520,
+      "chaos": 0.35,
+      "centerX": 0.5,
+      "centerY": 0.5
+    },
+    "palette": {
+      "colors": [
+        {
+          "hex": "#b8c7da",
+          "weight": 1
+        },
+        {
+          "hex": "#2f4466",
+          "weight": 1
+        },
+        {
+          "hex": "#1a2a46",
+          "weight": 1
+        },
+        {
+          "hex": "#0e1a30",
+          "weight": 1
+        },
+        {
+          "hex": "#0a0f1c",
+          "weight": 1
+        },
+        {
+          "hex": "#050608",
+          "weight": 1
+        }
+      ],
+      "mixing": 0.3,
+      "variation": 0.07
+    },
+    "coverage": 1,
+    "layers": {
+      "under": {
+        "amount": 0.9,
+        "size": 62,
+        "length": 420,
+        "thickness": 0.35
+      },
+      "body": {
+        "amount": 0.8,
+        "size": 30,
+        "length": 230,
+        "thickness": 1
+      },
+      "accents": {
+        "amount": 0.3,
+        "size": 14,
+        "length": 95,
+        "thickness": 1.6
+      }
+    }
+  },
+  "character": {
+    "tipShape": 2.2,
+    "edgeWobble": 0.5,
+    "bristles": 14,
+    "groove": 0.45,
+    "ridge": 0.35,
+    "flatten": 0.55,
+    "pickup": 0.35
+  }
+}

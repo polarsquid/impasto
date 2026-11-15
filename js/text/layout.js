@@ -65,6 +65,7 @@ export function defaultTextSettings() {
     height: 1.15,     // how tall the knife paint stands, in paint units
     knife: 0.15,      // strength of knife marks: plateau steps, scrapes, skips
     contamination: 0.15, // how much background colour the knife picks up
+    calm: 0.35,       // safe zone: how much the background behind the text is quietened
   };
 }
 

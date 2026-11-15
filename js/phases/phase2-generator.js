@@ -5,6 +5,8 @@
 // touch-ups) plus a generator that paints whole backgrounds:
 //
 //   Generate  - seed, repaint, watch it paint
+//   Background presets - save the background to a file, load one back, or
+//               pick one of the presets that ship in presets/
 //   Gesture   - the flow field: which way the strokes travel
 //   Palette   - up to 6 weighted colours, mixed like real pigment
 //   Layers    - underpainting, body paint and accents, coarse to fine
@@ -18,21 +20,21 @@ import { composePainting, defaultGeneratorSettings, LAYERS } from '../generator/
 import { StrokeRunner } from '../generator/stroke-runner.js';
 import { FIELD_TYPES } from '../generator/flow-field.js';
 import { PALETTE_PRESETS } from '../generator/palettes.js';
+import { CHARACTER_KEYS, makePreset, readPreset, presetFileName } from '../generator/presets.js';
 import {
   createSection, createSubheading, buildSliders, createSelect, createCheckbox,
   createButton, createActions, resetInPlace,
 } from '../ui/controls.js';
 
-// The brush settings that describe the paint's character. The generator
-// uses these for its strokes too, so hand touch-ups match the background.
-const CHARACTER_KEYS = ['tipShape', 'edgeWobble', 'bristles', 'groove', 'ridge', 'flatten', 'pickup'];
+// The built-in presets: presets/index.json lists the files in presets/.
+const PRESET_FOLDER = 'presets/';
 
 export const generatorPhase = {
   id: 'generator',
   number: 2,
   title: 'Generator',
   intro: 'Paints a whole background from a seed. Adjust the gesture, palette and layers, then touch up by hand.',
-  layout: ['generate', 'gesture', 'palette', 'layers', 'light', 'canvas', 'character', 'brush', 'view'],
+  layout: ['generate', 'presets', 'gesture', 'palette', 'layers', 'light', 'canvas', 'character', 'brush', 'view'],
 
   init(app) {
     this.app = app;
@@ -59,6 +61,7 @@ export const generatorPhase = {
 
     this.sections = {
       generate: this.buildGenerateSection(),
+      presets:  this.buildPresetsSection(),
       gesture:  this.buildGestureSection(),
       palette:  this.buildPaletteSection(),
       layers:   this.buildLayersSection(),
@@ -170,6 +173,98 @@ export const generatorPhase = {
     this.statusEl.setAttribute('aria-live', 'polite');
     section.appendChild(this.statusEl);
     return section;
+  },
+
+  // --- Background presets section -----------------------------------------------------
+  // The character uses the same key list (CHARACTER_KEYS) as repaint().
+
+  buildPresetsSection() {
+    const section = createSection('Background presets', {
+      note: 'A preset keeps the seed, generator settings and paint character. Text, light and canvas stay as they are.',
+    });
+    const status = document.createElement('p');
+    status.className = 'group__status';
+    status.setAttribute('aria-live', 'polite');
+    const say = (text) => { status.textContent = text; };
+
+    // Built-in presets: listed in presets/index.json. Filled in once the
+    // list has downloaded; hidden if there isn't one.
+    const builtIn = createSelect('Built-in', [{ value: '', label: 'Choose a preset…' }], '', async (file) => {
+      if (!file) return;
+      builtIn.select.value = '';   // back to the placeholder, ready for next time
+      try {
+        const response = await fetch(PRESET_FOLDER + file);
+        if (!response.ok) throw new Error(`Could not load ${PRESET_FOLDER}${file} (${response.status})`);
+        say(`Loaded "${this.applyPreset(await response.json())}"`);
+      } catch (error) {
+        say(error.message);
+      }
+    }, 'Presets that come with the project, from the presets folder. Add your own by saving a preset, copying the file into presets/ and listing it in presets/index.json.');
+    builtIn.row.hidden = true;
+    section.appendChild(builtIn.row);
+    fetch(PRESET_FOLDER + 'index.json')
+      .then((response) => (response.ok ? response.json() : { presets: [] }))
+      .then((index) => {
+        for (const { name, file } of index.presets ?? []) builtIn.select.add(new Option(name, file));
+        builtIn.row.hidden = builtIn.select.options.length <= 1;
+      })
+      .catch(() => {});   // no list: the dropdown just stays hidden
+
+    // Loading a file: a hidden file picker, opened by the button.
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = '.json,application/json';
+    picker.hidden = true;
+    picker.addEventListener('change', async () => {
+      const file = picker.files[0];
+      picker.value = '';   // so choosing the same file again still triggers this
+      if (!file) return;
+      try {
+        say(`Loaded "${this.applyPreset(JSON.parse(await file.text()))}"`);
+      } catch (error) {
+        say(error instanceof SyntaxError ? 'That file is not valid JSON.' : error.message);
+      }
+    });
+    section.appendChild(picker);
+
+    section.appendChild(createActions(
+      createButton('Save preset', () => {
+        const name = window.prompt('Name this preset:', `Seed ${this.settings.seed}`);
+        if (name === null) return;   // cancelled
+        const preset = makePreset(name.trim() || `Seed ${this.settings.seed}`, this.settings, this.app.settings.brush);
+        // Download it: make a temporary link to the JSON text and click it.
+        const blob = new Blob([JSON.stringify(preset, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = presetFileName(preset.name);
+        a.click();
+        URL.revokeObjectURL(a.href);
+        say(`Saved "${preset.name}" as ${a.download}`);
+      }, { tip: 'Downloads this background as a small .json file: the seed, generator settings and paint character. Load it again any time with "Load file".' }),
+      createButton('Load file', () => picker.click(),
+        { tip: 'Opens a saved preset (.json) and repaints the background with it.' }),
+    ));
+    section.appendChild(status);
+    return section;
+  },
+
+  /**
+   * Put a preset's settings in place and repaint.
+   * @param {Object} data  the parsed preset file
+   * @returns {string} the preset's name
+   * @throws if it isn't a preset (readPreset explains why)
+   */
+  applyPreset(data) {
+    const brush = this.app.settings.brush;
+    const preset = readPreset(data, defaultGeneratorSettings(), brush);
+    // In place, so the controls keep pointing at the same objects.
+    resetInPlace(this.settings, preset.generator);
+    for (const key of CHARACTER_KEYS) brush[key] = preset.character[key];
+    // Paint character is shared, so every tab's character sliders update.
+    this.app.refreshPanel();
+    this.refreshers.forEach((refresh) => refresh());
+    this.repaint();
+    return preset.name;
   },
 
   // --- Gesture section ----------------------------------------------------------------

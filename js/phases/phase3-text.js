@@ -7,7 +7,8 @@
 //
 //   Message     - font, the words, capitals, size, vertical position, jitter
 //   Knife paint - how rough the edges are, how tall the paint stands,
-//                 knife marks, and how much background colour is picked up
+//                 knife marks, how much background colour is picked up, and
+//                 how much the background behind the text is calmed
 //
 // HOW IT'S BUILT ON PHASE 2
 // This tab IS the generator tab with extra parts: it starts as a copy of
@@ -44,7 +45,7 @@ export const textPhase = {
   number: 3,
   title: 'Text',
   intro: 'Paints your message in white palette-knife impasto over the generated background.',
-  layout: ['generate', 'gesture', 'palette', 'layers', 'message', 'knife',
+  layout: ['generate', 'presets', 'gesture', 'palette', 'layers', 'message', 'knife',
            'light', 'canvas', 'character', 'brush', 'view'],
 
   init(app) {
@@ -197,6 +198,8 @@ export const textPhase = {
         tip: 'How much the knife shows: steps between passes of the blade, fine scrape lines, and thin skips where the blade lifted. 0 gives a smooth, even top.' },
       { key: 'contamination', label: 'Colour pickup', min: 0, max: 1, step: 0.01,
         tip: 'How much wet background colour the knife drags into the white where it first touches down, fading along the stroke. Mixes like real pigment.' },
+      { key: 'calm', label: 'Calm behind text', min: 0, max: 1, step: 0.01,
+        tip: 'Quietens the background in a soft band around the text so the letters read clearly: flatter paint, softer contrast and slightly darker, fading out with no hard edge. 0 leaves the background untouched.' },
     ], () => this.scheduleText(SLIDER_DELAY));
     this.refreshers.push(sliders.refresh);
     return section;

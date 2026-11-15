@@ -1,18 +1,20 @@
 // =============================================================================
 // text-painter.js
 // -----------------------------------------------------------------------------
-// Paints the knife lettering onto a PaintSurface. Three steps:
+// Paints the knife lettering onto a PaintSurface. Four steps:
 //
 //   layout   - layout.js decides the lines, size and letter positions
 //   field    - text-field.js turns the letters into a signed distance field
+//   calm     - shaders/calm.frag quietens the background in a soft band
+//              around the text (the "safe zone"), so the letters read clearly
 //   paint    - shaders/text.frag uses the field to lay thick white knife
 //              paint into the surface (colour, coverage, height and gloss)
 //
 // Layout and field take the most time (tens of milliseconds, in JavaScript)
 // but only depend on the message, size, position, jitter, seed and canvas
 // shape. So they're remembered, and only redone when one of those changes.
-// Changing roughness, height, knife marks or contamination just re-runs the
-// shader, which is quick.
+// Changing roughness, height, knife marks, contamination or the calm just
+// re-runs the shaders, which is quick.
 //
 // The field is uploaded to the GPU as a texture: 4 numbers per pixel, stored
 // as half-floats (RGBA16F), which is plenty for distances and angles.
@@ -34,6 +36,7 @@ export class TextPainter {
   constructor(gl, shaders) {
     this.gl = gl;
     this.program = new Program(gl, shaders['fullscreen.vert'], shaders['text.frag'], 'text');
+    this.calmProgram = new Program(gl, shaders['fullscreen.vert'], shaders['calm.frag'], 'calm');
     this.texture = gl.createTexture();
     this.cacheKey = null;   // what the current layout + field were made from
     this.layout = null;
@@ -56,6 +59,8 @@ export class TextPainter {
     const { layout, field } = this;
     if (!field) return { lines: [] };
 
+    if (settings.calm > 0) this.#calm(surface, layout, settings.calm);
+
     const box = { x0: field.x, y0: field.y, x1: field.x + field.width, y1: field.y + field.height };
     surface.applyPass(this.program, box, (program) => {
       program
@@ -72,6 +77,32 @@ export class TextPainter {
         .float('uContamination', settings.contamination);
     });
     return { lines: layout.lines };
+  }
+
+  /**
+   * The safe zone: calm the background in a soft band around the text block.
+   * Full strength reaches a third of a capital's height past the letters,
+   * then fades out over about one capital's height.
+   */
+  #calm(surface, layout, strength) {
+    const pad = layout.capPx * 0.35;
+    const feather = layout.capPx * 0.9;
+    const t = layout.box;
+    // The pass only needs to run where the band reaches. The fade's edge is
+    // wobbled by noise (up to 0.3 x feather each way), hence the extra.
+    const reach = pad + feather * 1.4;
+    const area = {
+      x0: Math.max(0, t.x0 - reach), y0: Math.max(0, t.y0 - reach),
+      x1: Math.min(surface.width, t.x1 + reach), y1: Math.min(surface.height, t.y1 + reach),
+    };
+    surface.applyPass(this.calmProgram, area, (program) => {
+      program
+        .vec2('uSurfaceSize', surface.width, surface.height)
+        .vec4('uTextBox', t.x0, t.y0, t.x1, t.y1)
+        .float('uPad', pad)
+        .float('uFeather', feather)
+        .float('uStrength', strength);
+    });
   }
 
   /** Redo the layout and field if anything they depend on has changed. */

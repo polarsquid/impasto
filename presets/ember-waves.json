@@ -1,0 +1,76 @@
+{
+  "format": "impasto-background",
+  "version": 1,
+  "name": "Ember waves",
+  "generator": {
+    "seed": 90210,
+    "field": {
+      "type": "waves",
+      "angle": 10,
+      "scale": 380,
+      "chaos": 0.3,
+      "centerX": 0.5,
+      "centerY": 0.5
+    },
+    "palette": {
+      "colors": [
+        {
+          "hex": "#f2cf7a",
+          "weight": 1
+        },
+        {
+          "hex": "#e0892e",
+          "weight": 1
+        },
+        {
+          "hex": "#b8401f",
+          "weight": 1
+        },
+        {
+          "hex": "#3d3a4a",
+          "weight": 1
+        },
+        {
+          "hex": "#6b1f1a",
+          "weight": 1
+        },
+        {
+          "hex": "#2a1a1f",
+          "weight": 1
+        }
+      ],
+      "mixing": 0.3,
+      "variation": 0.07
+    },
+    "coverage": 1,
+    "layers": {
+      "under": {
+        "amount": 0.9,
+        "size": 62,
+        "length": 420,
+        "thickness": 0.35
+      },
+      "body": {
+        "amount": 0.8,
+        "size": 30,
+        "length": 230,
+        "thickness": 1
+      },
+      "accents": {
+        "amount": 0.3,
+        "size": 14,
+        "length": 95,
+        "thickness": 1.6
+      }
+    }
+  },
+  "character": {
+    "tipShape": 2.2,
+    "edgeWobble": 0.5,
+    "bristles": 14,
+    "groove": 0.45,
+    "ridge": 0.35,
+    "flatten": 0.55,
+    "pickup": 0.35
+  }
+}

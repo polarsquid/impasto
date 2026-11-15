@@ -411,8 +411,8 @@ textarea {
 /* --- Tooltips --------------------------------------------------------------------
    Created by initTooltips() in controls.js: a .tip element inside each
    .has-tip control. Hidden by default; shown when the control is hovered
-   (after a short pause, so sweeping the mouse down the panel doesn't flash
-   a tooltip for every row) or reached by keyboard. */
+   (after a pause of 0.8s, so sweeping the mouse down the panel doesn't flash
+   a tooltip for every row; it only appears when you rest on a control) or reached by keyboard. */
 .has-tip { position: relative; }
 
 .tip {
@@ -443,8 +443,8 @@ textarea {
 .has-tip:has(:focus-visible) > .tip {
   opacity: 1;
   visibility: visible;
-  /* Showing: wait 0.45s, then fade in. */
-  transition: opacity 0.12s 0.45s, visibility 0s linear 0.45s;
+  /* Showing: wait 0.8s, then fade in. */
+  transition: opacity 0.12s 0.8s, visibility 0s linear 0.8s;
 }
 
 /* Get out of the way while something is being dragged (a slider, the lamp). */

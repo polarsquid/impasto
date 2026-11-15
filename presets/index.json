@@ -1,0 +1,20 @@
+{
+  "presets": [
+    {
+      "name": "Harbour sweep",
+      "file": "harbour-sweep.json"
+    },
+    {
+      "name": "Midnight swirl",
+      "file": "midnight-swirl.json"
+    },
+    {
+      "name": "Ember waves",
+      "file": "ember-waves.json"
+    },
+    {
+      "name": "Graphite turbulence",
+      "file": "graphite-turbulence.json"
+    }
+  ]
+}

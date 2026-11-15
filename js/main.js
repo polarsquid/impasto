@@ -47,7 +47,7 @@ const DEFAULT_ORIENTATION = 'portrait';
 // Every shader file the app uses (files they #include are found automatically).
 const SHADER_FILES = [
   'fullscreen.vert', 'dab.vert', 'dab.frag', 'composite.frag', 'copy.frag', 'lighting.frag',
-  'text.frag',
+  'text.frag', 'calm.frag',
 ];
 
 // --- Shared settings ------------------------------------------------------------
@@ -184,6 +184,11 @@ async function start() {
         if (phase.initialized) phase.reset?.(app);
       }
       needsRender = true;
+    },
+
+    /** Make every shared control re-read its value (after settings changed in code). */
+    refreshPanel() {
+      refreshShared();
     },
 
     clearPainting() {

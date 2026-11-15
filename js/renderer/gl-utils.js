@@ -140,6 +140,7 @@ export class Program {
   int(name, v)         { this.gl.uniform1i(this.loc(name), v); return this; }
   vec2(name, x, y)     { this.gl.uniform2f(this.loc(name), x, y); return this; }
   vec3(name, x, y, z)  { this.gl.uniform3f(this.loc(name), x, y, z); return this; }
+  vec4(name, x, y, z, w) { this.gl.uniform4f(this.loc(name), x, y, z, w); return this; }
 
   /**
    * Bind a texture to a numbered "texture unit" and point a sampler uniform
