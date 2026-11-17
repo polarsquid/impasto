@@ -58,7 +58,7 @@ export function defaultGeneratorSettings() {
     seed: 1234,
     field: { type: 'sweep', angle: -20, scale: 420, chaos: 0.45, centerX: 0.5, centerY: 0.5 },
     palette: {
-      colors: PALETTE_PRESETS[0].colors.map((hex) => ({ hex, weight: 1 })),
+      colors: PALETTE_PRESETS.find((p) => p.name === 'Midnight').colors.map((hex) => ({ hex, weight: 1 })),
       mixing: 0.3,      // chance a stroke picks up a second colour
       variation: 0.07,  // random brightness shift per stroke
     },
