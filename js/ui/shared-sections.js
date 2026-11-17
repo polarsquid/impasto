@@ -263,11 +263,11 @@ function buildViewSection(app, light, refreshers) {
     createButton('Clear canvas', () => app.clearPainting(),
       { tip: "Removes all the paint from this tab's painting, leaving bare canvas." }),
     createButton('Save PNG', () => app.savePng(),
-      { tip: 'Downloads the painting exactly as shown, at full resolution (1080 × 1350, or 1350 × 1080 in landscape).' }),
+      { tip: 'Downloads the painting exactly as shown, at full resolution (1080 × 1350 in portrait, or 1350 × 1080 in landscape).' }),
     createButton('Reset all settings', () => {
       // A quick "are you sure?", since it can't be undone.
       if (window.confirm('Reset every setting in every tab to its starting value?')) app.resetAllSettings();
-    }, { tip: 'Puts every setting in every tab back to its starting value (portrait included), after asking to confirm. The generator and text tabs repaint with the default settings; the test painting stays as it is unless the canvas turns back to portrait.' }),
+    }, { tip: 'Puts every setting in every tab back to its starting value (landscape included), after asking to confirm. The generator and text tabs repaint with the default settings; the test painting stays as it is unless the canvas turns back to landscape.' }),
   ));
   return section;
 }
