@@ -55,7 +55,7 @@ const EVENNESS_WEIGHT = 2;
 /** Text settings a fresh Text tab starts with. */
 export function defaultTextSettings() {
   return {
-    text: "YOU WOULDN'T STEAL A CAR",
+    text: "YOU WOULDN'T STEAL A SAUSAGE",
     font: 'xband',    // which lettering font (see LETTERING_FONTS in font.js)
     allCaps: true,    // paint everything in capitals, whatever was typed
     size: 0.9,        // fraction of the biggest size that fits (1 = fill the space)
