@@ -42,7 +42,7 @@ const SURFACE_SIZES = {
   portrait:  { width: 1080, height: 1350 },
   landscape: { width: 1350, height: 1080 },
 };
-const DEFAULT_ORIENTATION = 'portrait';
+const DEFAULT_ORIENTATION = 'landscape';
 
 // Every shader file the app uses (files they #include are found automatically).
 const SHADER_FILES = [
